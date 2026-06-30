@@ -7,6 +7,7 @@
 use super::traits::RemoteFs;
 use super::transfer::*;
 use super::util::*;
+use crate::app_event::emit_transfer_event;
 use crate::core::ssh::SshConnectionHandles;
 use crate::error::{AppError, AppResult};
 use crate::observability::{StructuredLog, StructuredLogLevel, log_event};
@@ -142,10 +143,7 @@ impl ScpNormalBackend {
                     .item_count_total()
                     .unwrap_or(*completed_count);
                 directory_controller.update_item_progress(*completed_count, total);
-                let _ = app.emit(
-                    "transfer-event",
-                    &directory_controller.build_event("progress", 0, None),
-                );
+                emit_transfer_event(&app, &directory_controller.build_event("progress", 0, None));
             }
         }
 
@@ -228,10 +226,7 @@ impl ScpNormalBackend {
                     .item_count_total()
                     .unwrap_or(*completed_count);
                 directory_controller.update_item_progress(*completed_count, total);
-                let _ = app.emit(
-                    "transfer-event",
-                    &directory_controller.build_event("progress", 0, None),
-                );
+                emit_transfer_event(&app, &directory_controller.build_event("progress", 0, None));
             }
         }
 
@@ -427,10 +422,7 @@ async fn download_file_inner(
     use tokio::io::AsyncWriteExt;
 
     register_transfer(controller.clone());
-    let _ = app.emit(
-        "transfer-event",
-        &controller.build_event("started", 0, None),
-    );
+    emit_transfer_event(&app, &controller.build_event("started", 0, None));
 
     let result: AppResult<u64> = async {
         if let Some(parent) = std::path::Path::new(local_path).parent() {
@@ -480,10 +472,7 @@ async fn download_file_inner(
                     if last_progress.elapsed() >= PROGRESS_INTERVAL {
                         last_progress = Instant::now();
                         emit_parent_progress(app, parent_controller.as_ref());
-                        let _ = app.emit(
-                            "transfer-event",
-                            &controller.build_event("progress", 0, None),
-                        );
+                        emit_transfer_event(&app, &controller.build_event("progress", 0, None));
                     }
                 }
                 Some(ChannelMsg::ExtendedData { data, ext }) => {
@@ -526,10 +515,7 @@ async fn download_file_inner(
     match result {
         Ok(size) => {
             controller.update_progress(size, size);
-            let _ = app.emit(
-                "transfer-event",
-                &controller.build_event("completed", size, None),
-            );
+            emit_transfer_event(&app, &controller.build_event("completed", size, None));
             unregister_transfer(&controller.id());
             Ok(())
         }
@@ -537,8 +523,8 @@ async fn download_file_inner(
             if matches!(e, AppError::Cancelled(_)) {
                 cleanup_cancelled_download(local_path).await;
             } else {
-                let _ = app.emit(
-                    "transfer-event",
+                emit_transfer_event(
+                    &app,
                     &controller.build_event("error", 0, Some(e.to_string())),
                 );
             }
@@ -561,10 +547,7 @@ async fn upload_file_inner(
     use tokio::io::AsyncReadExt;
 
     register_transfer(controller.clone());
-    let _ = app.emit(
-        "transfer-event",
-        &controller.build_event("started", 0, None),
-    );
+    emit_transfer_event(&app, &controller.build_event("started", 0, None));
 
     let tmp_path = format!("{}.__nyaterm_tmp_{}", remote_path, uuid::Uuid::new_v4());
 
@@ -620,10 +603,7 @@ async fn upload_file_inner(
             if last_progress.elapsed() >= PROGRESS_INTERVAL {
                 last_progress = Instant::now();
                 emit_parent_progress(app, parent_controller.as_ref());
-                let _ = app.emit(
-                    "transfer-event",
-                    &controller.build_event("progress", total_size, None),
-                );
+                emit_transfer_event(&app, &controller.build_event("progress", total_size, None));
             }
         }
 
@@ -680,10 +660,7 @@ async fn upload_file_inner(
     match result {
         Ok(size) => {
             controller.update_progress(size, size);
-            let _ = app.emit(
-                "transfer-event",
-                &controller.build_event("completed", size, None),
-            );
+            emit_transfer_event(&app, &controller.build_event("completed", size, None));
             unregister_transfer(&controller.id());
             Ok(())
         }
@@ -692,8 +669,8 @@ async fn upload_file_inner(
                 let _ =
                     exec_command(ssh_handle, &format!("rm -f -- {}", sh_quote(&tmp_path))).await;
             } else {
-                let _ = app.emit(
-                    "transfer-event",
+                emit_transfer_event(
+                    &app,
                     &controller.build_event("error", 0, Some(e.to_string())),
                 );
             }
@@ -1076,8 +1053,8 @@ impl RemoteFs for ScpNormalBackend {
                         "download".to_string(),
                         "file".to_string(),
                     );
-                    let _ = app.emit(
-                        "transfer-event",
+                    emit_transfer_event(
+                        &app,
                         &TransferEvent {
                             id: transfer_id,
                             session_id: session_id.to_string(),
@@ -1243,10 +1220,7 @@ impl RemoteFs for ScpNormalBackend {
             0,
         );
         register_transfer(directory_controller.clone());
-        let _ = app.emit(
-            "transfer-event",
-            &directory_controller.build_event("started", 0, None),
-        );
+        emit_transfer_event(&app, &directory_controller.build_event("started", 0, None));
 
         let mut completed_count = 0;
         let result = self
@@ -1263,8 +1237,8 @@ impl RemoteFs for ScpNormalBackend {
         match result {
             Ok(()) => {
                 directory_controller.update_item_progress(completed_count, total_files);
-                let _ = app.emit(
-                    "transfer-event",
+                emit_transfer_event(
+                    &app,
                     &directory_controller.build_event("completed", 0, None),
                 );
                 unregister_transfer(&directory_controller.id());
@@ -1272,14 +1246,14 @@ impl RemoteFs for ScpNormalBackend {
             }
             Err(e) => {
                 if matches!(e, AppError::Cancelled(_)) {
-                    let _ = app.emit(
-                        "transfer-event",
+                    emit_transfer_event(
+                        &app,
                         &directory_controller.build_event("cancelled", 0, None),
                     );
                     cleanup_cancelled_download(local_path).await;
                 } else {
-                    let _ = app.emit(
-                        "transfer-event",
+                    emit_transfer_event(
+                        &app,
                         &directory_controller.build_event("error", 0, Some(e.to_string())),
                     );
                 }
@@ -1324,10 +1298,7 @@ impl RemoteFs for ScpNormalBackend {
             local_stats.total_size,
         );
         register_transfer(directory_controller.clone());
-        let _ = app.emit(
-            "transfer-event",
-            &directory_controller.build_event("started", 0, None),
-        );
+        emit_transfer_event(&app, &directory_controller.build_event("started", 0, None));
 
         let mut completed_count = 0;
         let result = self
@@ -1346,8 +1317,8 @@ impl RemoteFs for ScpNormalBackend {
                 directory_controller
                     .update_progress(local_stats.total_size, local_stats.total_size);
                 directory_controller.update_item_progress(completed_count, local_stats.file_count);
-                let _ = app.emit(
-                    "transfer-event",
+                emit_transfer_event(
+                    &app,
                     &directory_controller.build_event("completed", 0, None),
                 );
                 unregister_transfer(&directory_controller.id());
@@ -1355,8 +1326,8 @@ impl RemoteFs for ScpNormalBackend {
             }
             Err(e) => {
                 if matches!(e, AppError::Cancelled(_)) {
-                    let _ = app.emit(
-                        "transfer-event",
+                    emit_transfer_event(
+                        &app,
                         &directory_controller.build_event("cancelled", 0, None),
                     );
                     let _ = exec_command(
@@ -1365,8 +1336,8 @@ impl RemoteFs for ScpNormalBackend {
                     )
                     .await;
                 } else {
-                    let _ = app.emit(
-                        "transfer-event",
+                    emit_transfer_event(
+                        &app,
                         &directory_controller.build_event("error", 0, Some(e.to_string())),
                     );
                 }

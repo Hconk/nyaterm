@@ -1,3 +1,4 @@
+use crate::app_core::NyatermCore;
 use crate::config;
 use crate::core::ssh::{
     self, HostKeyVerifyManager, PendingAuthManager, PendingSshAuthManager, SshAuthResponse,
@@ -462,164 +463,78 @@ pub fn list_serial_ports() -> AppResult<Vec<String>> {
 
 #[tauri::command]
 pub async fn write_to_session(
-    state: tauri::State<'_, Arc<SessionManager>>,
+    core: tauri::State<'_, NyatermCore>,
     session_id: String,
     data: String,
 ) -> AppResult<()> {
-    state
-        .send_command(&session_id, SessionCommand::Write(data.into_bytes()))
-        .await
+    core.write_to_session(&session_id, data).await
 }
 
 #[tauri::command]
 pub async fn set_session_output_paused(
-    state: tauri::State<'_, Arc<SessionManager>>,
+    core: tauri::State<'_, NyatermCore>,
     session_id: String,
     paused: bool,
 ) -> AppResult<()> {
-    let command = if paused {
-        SessionCommand::PauseOutput
-    } else {
-        SessionCommand::ResumeOutput
-    };
-    state.send_command(&session_id, command).await
+    core.set_session_output_paused(&session_id, paused).await
 }
 
 #[tauri::command]
 pub async fn zmodem_accept_download(
-    state: tauri::State<'_, Arc<SessionManager>>,
+    core: tauri::State<'_, NyatermCore>,
     session_id: String,
     save_dir: String,
 ) -> AppResult<()> {
-    state
-        .send_command(
-            &session_id,
-            SessionCommand::ZmodemAcceptDownload {
-                save_dir: std::path::PathBuf::from(save_dir),
-            },
-        )
-        .await
+    core.zmodem_accept_download(&session_id, save_dir).await
 }
 
 #[tauri::command]
 pub async fn zmodem_accept_upload(
-    state: tauri::State<'_, Arc<SessionManager>>,
+    core: tauri::State<'_, NyatermCore>,
     session_id: String,
     file_paths: Vec<String>,
 ) -> AppResult<()> {
-    state
-        .send_command(
-            &session_id,
-            SessionCommand::ZmodemAcceptUpload {
-                files: file_paths
-                    .into_iter()
-                    .map(std::path::PathBuf::from)
-                    .collect(),
-            },
-        )
-        .await
+    core.zmodem_accept_upload(&session_id, file_paths).await
 }
 
 #[tauri::command]
 pub async fn zmodem_cancel(
-    state: tauri::State<'_, Arc<SessionManager>>,
+    core: tauri::State<'_, NyatermCore>,
     session_id: String,
 ) -> AppResult<()> {
-    state
-        .send_command(&session_id, SessionCommand::ZmodemCancel)
-        .await
+    core.zmodem_cancel(&session_id).await
 }
 
 #[tauri::command]
 pub async fn resize_session(
-    state: tauri::State<'_, Arc<SessionManager>>,
+    core: tauri::State<'_, NyatermCore>,
     session_id: String,
     cols: u32,
     rows: u32,
 ) -> AppResult<()> {
-    state
-        .send_command(&session_id, SessionCommand::Resize { cols, rows })
-        .await
+    core.resize_session(&session_id, cols, rows).await
 }
 
 #[tauri::command]
 pub async fn attach_session(
-    state: tauri::State<'_, Arc<SessionManager>>,
+    core: tauri::State<'_, NyatermCore>,
     session_id: String,
 ) -> AppResult<()> {
-    state
-        .send_command(&session_id, SessionCommand::Attach)
-        .await
+    core.attach_session(&session_id).await
 }
 
 #[tauri::command]
 pub async fn close_session(
     app: tauri::AppHandle,
-    state: tauri::State<'_, Arc<SessionManager>>,
+    core: tauri::State<'_, NyatermCore>,
     session_id: String,
 ) -> AppResult<()> {
-    let session_id_clone = session_id.clone();
-
-    observability::log_event(StructuredLog {
-        level: StructuredLogLevel::Info,
-        domain: "session.lifecycle".to_string(),
-        event: "session.close_requested".to_string(),
-        message: "Closing session".to_string(),
-        ids: Some(serde_json::json!({ "session_id": session_id.clone() })),
-        data: None,
-        error: None,
-        client_timestamp: None,
-    });
-
-    let res = match state.send_command(&session_id, SessionCommand::Close).await {
-        Err(AppError::SessionNotFound(_)) => Ok(()),
-        other => other,
-    };
-
-    // Concurrently tidy up any downloaded/watcher temporary files stored in the OS temp directory
-    tauri::async_runtime::spawn(async move {
-        if let Ok(temp_dir) = app.path().temp_dir() {
-            let session_temp_dir = temp_dir.join("nyaterm").join(&session_id_clone);
-            if session_temp_dir.exists() {
-                if let Err(e) = tokio::fs::remove_dir_all(&session_temp_dir).await {
-                    observability::log_event(StructuredLog {
-                        level: StructuredLogLevel::Warn,
-                        domain: "session.lifecycle".to_string(),
-                        event: "session.temp_cleanup_failed".to_string(),
-                        message: "Failed to clean up session temp directory".to_string(),
-                        ids: Some(serde_json::json!({ "session_id": session_id_clone })),
-                        data: Some(serde_json::json!({
-                            "temp_dir": session_temp_dir,
-                        })),
-                        error: Some(serde_json::json!({ "message": e.to_string() })),
-                        client_timestamp: None,
-                    });
-                } else {
-                    observability::log_event(StructuredLog {
-                        level: StructuredLogLevel::Info,
-                        domain: "session.lifecycle".to_string(),
-                        event: "session.temp_cleanup_succeeded".to_string(),
-                        message: "Cleaned up session temp directory".to_string(),
-                        ids: Some(serde_json::json!({ "session_id": session_id_clone })),
-                        data: Some(serde_json::json!({
-                            "temp_dir": session_temp_dir,
-                        })),
-                        error: None,
-                        client_timestamp: None,
-                    });
-                }
-            }
-        }
-    });
-
-    res
+    core.close_session(app, session_id).await
 }
 
 #[tauri::command]
-pub async fn list_sessions(
-    state: tauri::State<'_, Arc<SessionManager>>,
-) -> AppResult<Vec<SessionInfo>> {
-    Ok(state.list_sessions().await)
+pub async fn list_sessions(core: tauri::State<'_, NyatermCore>) -> AppResult<Vec<SessionInfo>> {
+    core.list_sessions().await
 }
 
 #[tauri::command]

@@ -4,6 +4,7 @@
 //! confirmation, and persists history for fuzzy search.
 
 use super::history::{CommandHistoryStore, sanitize_history_command};
+use crate::app_event::{AppEvent, publish_app_event};
 use crate::config::AiExecutionProfile;
 use crate::core::capture::CapturedOutput;
 use crate::error::{AppError, AppResult};
@@ -239,6 +240,7 @@ impl SessionManager {
         }
         if let Some(app) = self.app_handle.get() {
             let _ = app.emit("command-history-changed", ());
+            publish_app_event(app, AppEvent::CommandHistoryChanged);
         }
         Ok(())
     }
@@ -257,6 +259,7 @@ impl SessionManager {
         );
         if let Some(app) = self.app_handle.get() {
             let _ = app.emit("sessions-changed", ());
+            publish_app_event(app, AppEvent::SessionsChanged);
             crate::tray::schedule_refresh(app);
         }
     }
@@ -272,6 +275,7 @@ impl SessionManager {
         if removed {
             if let Some(app) = self.app_handle.get() {
                 let _ = app.emit("sessions-changed", ());
+                publish_app_event(app, AppEvent::SessionsChanged);
                 crate::tray::schedule_refresh(app);
             }
         }
