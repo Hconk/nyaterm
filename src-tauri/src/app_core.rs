@@ -4,6 +4,7 @@
 //! intentionally UI-toolkit agnostic so the existing Tauri WebView frontend and
 //! a future egui frontend can share the same runtime services during migration.
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::app_event::AppEventBus;
@@ -80,6 +81,52 @@ impl NyatermCore {
     pub async fn resize_session(&self, session_id: &str, cols: u32, rows: u32) -> AppResult<()> {
         self.session_manager
             .send_command(session_id, SessionCommand::Resize { cols, rows })
+            .await
+    }
+
+    /// Attach a frontend listener to a session and flush any buffered output.
+    pub async fn attach_session(&self, session_id: &str) -> AppResult<()> {
+        self.session_manager
+            .send_command(session_id, SessionCommand::Attach)
+            .await
+    }
+
+    /// Accept a pending ZMODEM download for a session.
+    pub async fn zmodem_accept_download(
+        &self,
+        session_id: &str,
+        save_dir: String,
+    ) -> AppResult<()> {
+        self.session_manager
+            .send_command(
+                session_id,
+                SessionCommand::ZmodemAcceptDownload {
+                    save_dir: PathBuf::from(save_dir),
+                },
+            )
+            .await
+    }
+
+    /// Accept a pending ZMODEM upload for a session.
+    pub async fn zmodem_accept_upload(
+        &self,
+        session_id: &str,
+        file_paths: Vec<String>,
+    ) -> AppResult<()> {
+        self.session_manager
+            .send_command(
+                session_id,
+                SessionCommand::ZmodemAcceptUpload {
+                    files: file_paths.into_iter().map(PathBuf::from).collect(),
+                },
+            )
+            .await
+    }
+
+    /// Cancel a pending or active ZMODEM transfer for a session.
+    pub async fn zmodem_cancel(&self, session_id: &str) -> AppResult<()> {
+        self.session_manager
+            .send_command(session_id, SessionCommand::ZmodemCancel)
             .await
     }
 

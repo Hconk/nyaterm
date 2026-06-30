@@ -481,47 +481,28 @@ pub async fn set_session_output_paused(
 
 #[tauri::command]
 pub async fn zmodem_accept_download(
-    state: tauri::State<'_, Arc<SessionManager>>,
+    core: tauri::State<'_, NyatermCore>,
     session_id: String,
     save_dir: String,
 ) -> AppResult<()> {
-    state
-        .send_command(
-            &session_id,
-            SessionCommand::ZmodemAcceptDownload {
-                save_dir: std::path::PathBuf::from(save_dir),
-            },
-        )
-        .await
+    core.zmodem_accept_download(&session_id, save_dir).await
 }
 
 #[tauri::command]
 pub async fn zmodem_accept_upload(
-    state: tauri::State<'_, Arc<SessionManager>>,
+    core: tauri::State<'_, NyatermCore>,
     session_id: String,
     file_paths: Vec<String>,
 ) -> AppResult<()> {
-    state
-        .send_command(
-            &session_id,
-            SessionCommand::ZmodemAcceptUpload {
-                files: file_paths
-                    .into_iter()
-                    .map(std::path::PathBuf::from)
-                    .collect(),
-            },
-        )
-        .await
+    core.zmodem_accept_upload(&session_id, file_paths).await
 }
 
 #[tauri::command]
 pub async fn zmodem_cancel(
-    state: tauri::State<'_, Arc<SessionManager>>,
+    core: tauri::State<'_, NyatermCore>,
     session_id: String,
 ) -> AppResult<()> {
-    state
-        .send_command(&session_id, SessionCommand::ZmodemCancel)
-        .await
+    core.zmodem_cancel(&session_id).await
 }
 
 #[tauri::command]
@@ -536,12 +517,10 @@ pub async fn resize_session(
 
 #[tauri::command]
 pub async fn attach_session(
-    state: tauri::State<'_, Arc<SessionManager>>,
+    core: tauri::State<'_, NyatermCore>,
     session_id: String,
 ) -> AppResult<()> {
-    state
-        .send_command(&session_id, SessionCommand::Attach)
-        .await
+    core.attach_session(&session_id).await
 }
 
 #[tauri::command]
