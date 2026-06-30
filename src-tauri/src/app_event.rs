@@ -5,7 +5,7 @@
 //! WebView, so this module provides a small typed bus that backend services can
 //! adopt incrementally while the Tauri event bridge remains in place.
 
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 use tokio::sync::broadcast;
 
 const DEFAULT_EVENT_BUFFER: usize = 1024;
@@ -69,6 +69,29 @@ pub fn publish_app_event(app: &tauri::AppHandle, event: AppEvent) {
     if let Some(bus) = app.try_state::<AppEventBus>() {
         bus.publish_lossy(event);
     }
+}
+
+/// Emit and publish a terminal working-directory update.
+pub fn emit_cwd_changed(app: &tauri::AppHandle, event_name: &str, session_id: &str, cwd: &str) {
+    let _ = app.emit(event_name, cwd);
+    publish_app_event(
+        app,
+        AppEvent::CwdChanged {
+            session_id: session_id.to_string(),
+            cwd: cwd.to_string(),
+        },
+    );
+}
+
+/// Emit and publish a terminal session close notification.
+pub fn emit_session_closed(app: &tauri::AppHandle, session_id: &str) {
+    let _ = app.emit(&format!("session-closed-{session_id}"), ());
+    publish_app_event(
+        app,
+        AppEvent::SessionClosed {
+            session_id: session_id.to_string(),
+        },
+    );
 }
 
 impl Default for AppEventBus {

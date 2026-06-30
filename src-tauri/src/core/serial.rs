@@ -7,6 +7,7 @@ use super::zmodem::{
     ZmodemAction, ZmodemDetectResult, ZmodemDetector, ZmodemDirection, ZmodemEvent, ZmodemTransfer,
     start_zmodem_transfer,
 };
+use crate::app_event::emit_session_closed;
 use crate::config::AiExecutionProfile;
 use crate::core::capture::OutputCaptureProcessor;
 use crate::core::input::remap_del_to_bs;
@@ -205,7 +206,6 @@ fn serial_session_thread(
     let backspace_as_bs = config.backspace_mode == "ctrl_h";
     let port_writer = Arc::new(Mutex::new(port));
     let output_event = format!("terminal-output-{}", session_id);
-    let closed_event = format!("session-closed-{}", session_id);
     let output = SessionOutputCoalescer::for_app(app.clone(), output_event.clone());
     let recording_mgr: Option<Arc<RecordingManager>> = app
         .try_state::<Arc<RecordingManager>>()
@@ -502,5 +502,5 @@ fn serial_session_thread(
     rt_handle.block_on(async {
         manager.remove_session(&session_id).await;
     });
-    let _ = app.emit(&closed_event, ());
+    emit_session_closed(&app, &session_id);
 }
