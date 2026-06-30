@@ -5,6 +5,7 @@
 //! WebView, so this module provides a small typed bus that backend services can
 //! adopt incrementally while the Tauri event bridge remains in place.
 
+use tauri::Manager;
 use tokio::sync::broadcast;
 
 const DEFAULT_EVENT_BUFFER: usize = 1024;
@@ -57,6 +58,16 @@ impl AppEventBus {
     /// Publish an event and ignore the result when no native UI is attached yet.
     pub fn publish_lossy(&self, event: AppEvent) {
         let _ = self.publish(event);
+    }
+}
+
+/// Publish a typed event through the bus managed by the Tauri app, if present.
+///
+/// This is intentionally lossy so existing Tauri-only startup paths keep working
+/// while the native UI event bus is adopted incrementally.
+pub fn publish_app_event(app: &tauri::AppHandle, event: AppEvent) {
+    if let Some(bus) = app.try_state::<AppEventBus>() {
+        bus.publish_lossy(event);
     }
 }
 

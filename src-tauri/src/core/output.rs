@@ -1,5 +1,6 @@
 use std::sync::{Arc, Mutex};
 
+use crate::app_event::{AppEvent, publish_app_event};
 use tauri::{AppHandle, Emitter};
 use tokio::time::{Duration, sleep};
 
@@ -27,8 +28,20 @@ pub struct SessionOutputCoalescer {
 
 impl SessionOutputCoalescer {
     pub fn for_app(app: AppHandle, output_event: String) -> Arc<Self> {
+        let session_id = output_event
+            .strip_prefix("terminal-output-")
+            .map(str::to_owned);
         Self::with_sink(move |text| {
             let _ = app.emit(&output_event, &text);
+            if let Some(session_id) = &session_id {
+                publish_app_event(
+                    &app,
+                    AppEvent::TerminalOutput {
+                        session_id: session_id.clone(),
+                        data: text,
+                    },
+                );
+            }
         })
     }
 
