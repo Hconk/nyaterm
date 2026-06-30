@@ -9,7 +9,8 @@ use std::sync::Arc;
 
 use crate::app_event::AppEventBus;
 use crate::config::{
-    CloudSyncHistoryEntry, CloudSyncStatus, QuickCommand, QuickCommandCategory, QuickCommandsConfig,
+    self, AppSettings, CloudSyncHistoryEntry, CloudSyncStatus, QuickCommand, QuickCommandCategory,
+    QuickCommandsConfig,
 };
 use crate::core::ai::AgentApprovalManager;
 use crate::core::sftp::TransferDuplicateManager;
@@ -132,6 +133,26 @@ impl NyatermCore {
         self.session_manager
             .send_command(session_id, SessionCommand::ZmodemCancel)
             .await
+    }
+
+    /// Load app settings with sensitive values masked for UI editing.
+    pub fn get_app_settings(&self, app: &tauri::AppHandle) -> AppResult<AppSettings> {
+        let mut settings = config::load_app_settings(app)?;
+        if settings.security.master_password.is_some() {
+            settings.security.master_password = Some("__SET__".to_string());
+        }
+        settings.cloud_sync = config::mask_cloud_sync_settings(settings.cloud_sync);
+        settings.ai = config::mask_ai_settings(settings.ai);
+        Ok(settings)
+    }
+
+    /// Persist app settings through the shared settings persistence path.
+    pub async fn save_app_settings(
+        &self,
+        app: &tauri::AppHandle,
+        settings: AppSettings,
+    ) -> AppResult<()> {
+        crate::cmd::settings::persist_app_settings(app, &self.cloud_sync_manager, settings).await
     }
 
     /// Return the current quick-command configuration snapshot.
