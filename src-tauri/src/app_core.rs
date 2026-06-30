@@ -12,7 +12,13 @@ use crate::core::sftp::TransferDuplicateManager;
 use crate::core::ssh::{
     HostKeyVerifyManager, PendingAuthManager, PendingSshAuthManager, TunnelManager,
 };
-use crate::core::{CloudSyncManager, QuickCommandsStore, RecordingManager, SessionManager};
+use crate::core::{
+    CloudSyncManager, QuickCommandsStore, RecordingManager, SessionCommand, SessionInfo,
+    SessionManager,
+};
+use crate::error::{AppError, AppResult};
+use crate::observability::{self, StructuredLog, StructuredLogLevel};
+use tauri::Manager;
 
 /// Shared backend managers and typed event publisher for UI frontends.
 #[derive(Clone)]
@@ -46,6 +52,97 @@ impl NyatermCore {
             transfer_duplicate_manager: Arc::new(TransferDuplicateManager::new()),
             event_bus: AppEventBus::new(),
         }
+    }
+
+    /// List active sessions for UI frontends.
+    pub async fn list_sessions(&self) -> AppResult<Vec<SessionInfo>> {
+        Ok(self.session_manager.list_sessions().await)
+    }
+
+    /// Write UTF-8 input bytes to a session.
+    pub async fn write_to_session(&self, session_id: &str, data: String) -> AppResult<()> {
+        self.session_manager
+            .send_command(session_id, SessionCommand::Write(data.into_bytes()))
+            .await
+    }
+
+    /// Pause or resume backend output forwarding for a session.
+    pub async fn set_session_output_paused(&self, session_id: &str, paused: bool) -> AppResult<()> {
+        let command = if paused {
+            SessionCommand::PauseOutput
+        } else {
+            SessionCommand::ResumeOutput
+        };
+        self.session_manager.send_command(session_id, command).await
+    }
+
+    /// Resize a session terminal.
+    pub async fn resize_session(&self, session_id: &str, cols: u32, rows: u32) -> AppResult<()> {
+        self.session_manager
+            .send_command(session_id, SessionCommand::Resize { cols, rows })
+            .await
+    }
+
+    /// Request a session close and clean up temporary files associated with it.
+    pub async fn close_session(&self, app: tauri::AppHandle, session_id: String) -> AppResult<()> {
+        let session_id_clone = session_id.clone();
+
+        observability::log_event(StructuredLog {
+            level: StructuredLogLevel::Info,
+            domain: "session.lifecycle".to_string(),
+            event: "session.close_requested".to_string(),
+            message: "Closing session".to_string(),
+            ids: Some(serde_json::json!({ "session_id": session_id.clone() })),
+            data: None,
+            error: None,
+            client_timestamp: None,
+        });
+
+        let result = match self
+            .session_manager
+            .send_command(&session_id, SessionCommand::Close)
+            .await
+        {
+            Err(AppError::SessionNotFound(_)) => Ok(()),
+            other => other,
+        };
+
+        tauri::async_runtime::spawn(async move {
+            if let Ok(temp_dir) = app.path().temp_dir() {
+                let session_temp_dir = temp_dir.join("nyaterm").join(&session_id_clone);
+                if session_temp_dir.exists() {
+                    if let Err(error) = tokio::fs::remove_dir_all(&session_temp_dir).await {
+                        observability::log_event(StructuredLog {
+                            level: StructuredLogLevel::Warn,
+                            domain: "session.lifecycle".to_string(),
+                            event: "session.temp_cleanup_failed".to_string(),
+                            message: "Failed to clean up session temp directory".to_string(),
+                            ids: Some(serde_json::json!({ "session_id": session_id_clone })),
+                            data: Some(serde_json::json!({
+                                "temp_dir": session_temp_dir,
+                            })),
+                            error: Some(serde_json::json!({ "message": error.to_string() })),
+                            client_timestamp: None,
+                        });
+                    } else {
+                        observability::log_event(StructuredLog {
+                            level: StructuredLogLevel::Info,
+                            domain: "session.lifecycle".to_string(),
+                            event: "session.temp_cleanup_succeeded".to_string(),
+                            message: "Cleaned up session temp directory".to_string(),
+                            ids: Some(serde_json::json!({ "session_id": session_id_clone })),
+                            data: Some(serde_json::json!({
+                                "temp_dir": session_temp_dir,
+                            })),
+                            error: None,
+                            client_timestamp: None,
+                        });
+                    }
+                }
+            }
+        });
+
+        result
     }
 }
 
