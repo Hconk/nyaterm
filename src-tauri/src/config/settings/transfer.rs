@@ -100,7 +100,7 @@ mod tests {
             "recording_path": "",
             "recording_include_io_labels": true,
             "recording_include_timestamps": true,
-            "recording_memory_limit_bytes": 5242880
+            "recording_memory_limit_bytes": 5_242_880
         }))
         .unwrap();
 

@@ -1,47 +1,44 @@
-use std::sync::Arc;
-
+use crate::app_core::NyatermCore;
 use crate::config::{CloudSyncHistoryEntry, CloudSyncStatus};
+use crate::core;
 use crate::core::cloud_sync::{GithubGistDeviceFlowPoll, GithubGistDeviceFlowStart};
-use crate::core::{self, CloudSyncManager};
 use crate::error::AppResult;
 
 #[tauri::command]
-pub async fn test_cloud_sync_connection(
-    manager: tauri::State<'_, Arc<CloudSyncManager>>,
-) -> AppResult<()> {
-    manager.test_connection().await
+pub async fn test_cloud_sync_connection(core: tauri::State<'_, NyatermCore>) -> AppResult<()> {
+    core.test_cloud_sync_connection().await
 }
 
 #[tauri::command]
 pub async fn get_cloud_sync_status(
-    manager: tauri::State<'_, Arc<CloudSyncManager>>,
+    core: tauri::State<'_, NyatermCore>,
 ) -> AppResult<CloudSyncStatus> {
-    Ok(manager.get_status().await)
+    core.get_cloud_sync_status().await
 }
 
 #[tauri::command]
-pub async fn sync_push_now(manager: tauri::State<'_, Arc<CloudSyncManager>>) -> AppResult<()> {
-    manager.inner().sync_push_now("manual_push").await
+pub async fn sync_push_now(core: tauri::State<'_, NyatermCore>) -> AppResult<()> {
+    core.sync_push_now().await
 }
 
 #[tauri::command]
-pub async fn sync_pull_now(manager: tauri::State<'_, Arc<CloudSyncManager>>) -> AppResult<()> {
-    manager.inner().sync_pull_now("manual_pull").await
+pub async fn sync_pull_now(core: tauri::State<'_, NyatermCore>) -> AppResult<()> {
+    core.sync_pull_now().await
 }
 
 #[tauri::command]
 pub async fn resolve_cloud_sync_conflict(
-    manager: tauri::State<'_, Arc<CloudSyncManager>>,
+    core: tauri::State<'_, NyatermCore>,
     action: String,
 ) -> AppResult<()> {
-    manager.inner().resolve_cloud_sync_conflict(&action).await
+    core.resolve_cloud_sync_conflict(&action).await
 }
 
 #[tauri::command]
 pub async fn list_cloud_sync_history(
-    manager: tauri::State<'_, Arc<CloudSyncManager>>,
+    core: tauri::State<'_, NyatermCore>,
 ) -> AppResult<Vec<CloudSyncHistoryEntry>> {
-    Ok(manager.list_history().await)
+    core.list_cloud_sync_history().await
 }
 
 #[tauri::command]

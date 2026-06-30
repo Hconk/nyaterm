@@ -1,3 +1,4 @@
+use crate::app_core::NyatermCore;
 use crate::config;
 use crate::core::CloudSyncManager;
 use crate::error::{AppError, AppResult};
@@ -46,29 +47,26 @@ pub async fn get_system_font_infos() -> Vec<FontInfo> {
 }
 
 #[tauri::command]
-pub fn get_app_settings(app: tauri::AppHandle) -> AppResult<config::AppSettings> {
-    let mut settings = config::load_app_settings(&app)?;
-    if settings.security.master_password.is_some() {
-        settings.security.master_password = Some("__SET__".to_string());
-    }
-    settings.cloud_sync = config::mask_cloud_sync_settings(settings.cloud_sync);
-    settings.ai = config::mask_ai_settings(settings.ai);
-    Ok(settings)
+pub fn get_app_settings(
+    app: tauri::AppHandle,
+    core: tauri::State<'_, NyatermCore>,
+) -> AppResult<config::AppSettings> {
+    core.get_app_settings(&app)
 }
 
 #[tauri::command]
 pub async fn save_app_settings(
     app: tauri::AppHandle,
-    manager: tauri::State<'_, Arc<CloudSyncManager>>,
+    core: tauri::State<'_, NyatermCore>,
     settings: config::AppSettings,
 ) -> AppResult<()> {
-    persist_app_settings(&app, manager.inner(), settings).await
+    core.save_app_settings(&app, settings).await
 }
 
 #[tauri::command]
 pub async fn import_keyword_highlight_rules(
     app: tauri::AppHandle,
-    manager: tauri::State<'_, Arc<CloudSyncManager>>,
+    core: tauri::State<'_, NyatermCore>,
     file_path: String,
 ) -> AppResult<KeywordHighlightImportResult> {
     let raw = std::fs::read_to_string(file_path)
@@ -81,7 +79,7 @@ pub async fn import_keyword_highlight_rules(
             uuid::Uuid::new_v4().to_string()
         })?;
 
-    persist_app_settings(&app, manager.inner(), settings).await?;
+    core.save_app_settings(&app, settings).await?;
     Ok(result)
 }
 
@@ -304,12 +302,12 @@ mod tests {
 
     #[test]
     fn import_keyword_highlight_rules_parses_array_format() {
-        let raw = r##"[
+        let raw = r#"[
             {
                 "name": "Warnings",
                 "patterns": ["warn"]
             }
-        ]"##;
+        ]"#;
 
         let rules = parse_keyword_highlight_import(raw).expect("parse array");
 
@@ -351,10 +349,10 @@ mod tests {
     fn import_keyword_highlight_rules_adds_generated_id_and_defaults() {
         let mut existing = Vec::new();
         let imported = parse_keyword_highlight_import(
-            r##"[{
+            r#"[{
                 "name": " Status ",
                 "patterns": [" success ", "", " done "]
-            }]"##,
+            }]"#,
         )
         .expect("parse");
 
@@ -376,12 +374,12 @@ mod tests {
     fn import_keyword_highlight_rules_rejects_empty_or_invalid_rules() {
         let mut existing = Vec::new();
         let imported = parse_keyword_highlight_import(
-            r##"{
+            r#"{
                 "keyword_highlights": [
                     { "name": "", "patterns": ["fatal"] },
                     { "name": "Empty Patterns", "patterns": ["", " "] }
                 ]
-            }"##,
+            }"#,
         )
         .expect("parse");
 

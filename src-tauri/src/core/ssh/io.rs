@@ -1,4 +1,5 @@
 use super::client::{SshHandle, SshHandler, SshPostLoginConfig, SshStartupCommand};
+use crate::app_event::{emit_cwd_changed, emit_session_closed};
 use crate::core::capture::OutputCaptureProcessor;
 use crate::core::input::remap_del_to_bs;
 use crate::core::ssh::osc::{self, OscStripper, ShellKind};
@@ -380,7 +381,6 @@ pub(super) async fn ssh_io_loop(
     let backspace_as_bs = backspace_mode == "ctrl_h";
     let output_event = format!("terminal-output-{}", session_id);
     let cwd_event = format!("cwd-changed-{}", session_id);
-    let closed_event = format!("session-closed-{}", session_id);
 
     let recording_mgr: Option<Arc<RecordingManager>> = app
         .try_state::<Arc<RecordingManager>>()
@@ -737,7 +737,7 @@ pub(super) async fn ssh_io_loop(
         remote_exit_signal = remote_exit_signal.as_deref(),
         "SSH session closed"
     );
-    let _ = app.emit(&closed_event, ());
+    emit_session_closed(&app, &session_id);
 }
 
 async fn handle_zmodem_actions(
@@ -783,7 +783,7 @@ async fn emit_metadata(
 ) {
     for path in &result.cwd_paths {
         if let Some(next_cwd) = update_cwd_if_changed(cwd, path).await {
-            let _ = app.emit(cwd_event, &next_cwd);
+            emit_cwd_changed(app, cwd_event, session_id, &next_cwd);
         }
     }
 

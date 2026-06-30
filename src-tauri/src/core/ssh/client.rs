@@ -1,3 +1,4 @@
+use crate::app_event::emit_host_key_verify;
 use crate::error::{AppError, AppResult};
 use russh::client;
 use russh::keys::{Algorithm, EcdsaCurve, HashAlg, PublicKeyBase64};
@@ -414,7 +415,7 @@ impl client::Handler for SshHandler {
                     "Prompting user to verify SSH host key"
                 );
 
-                let _ = self.app.emit("host-key-verify", &payload);
+                emit_host_key_verify(&self.app, &payload);
 
                 // 120s timeout prevents indefinite hang if the frontend
                 // isn't ready (e.g. startup reconnect before listeners register).

@@ -4,12 +4,12 @@
 //! to the same `TransferController` and global registries so the frontend
 //! `transfer-event` contract is identical regardless of the underlying protocol.
 
+use crate::app_event::emit_transfer_event;
 use crate::error::{AppError, AppResult};
 use serde::Serialize;
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use tauri::Emitter;
 use tokio::sync::Notify;
 
 pub(crate) const TRANSFER_CANCELLED_MESSAGE: &str = "Transfer cancelled";
@@ -464,7 +464,7 @@ pub(crate) fn emit_parent_progress(
     parent_controller: Option<&Arc<TransferController>>,
 ) {
     if let Some(parent) = parent_controller {
-        let _ = app.emit("transfer-event", &parent.build_event("progress", 0, None));
+        emit_transfer_event(app, &parent.build_event("progress", 0, None));
     }
 }
 
@@ -493,7 +493,7 @@ pub(crate) fn remember_transfer_target_external(
 pub async fn pause_transfer(app: tauri::AppHandle, transfer_id: &str) -> AppResult<()> {
     if let Some(controller) = find_transfer(transfer_id) {
         if let Some(event) = controller.pause() {
-            let _ = app.emit("transfer-event", &event);
+            emit_transfer_event(&app, &event);
         }
     }
     Ok(())
@@ -502,7 +502,7 @@ pub async fn pause_transfer(app: tauri::AppHandle, transfer_id: &str) -> AppResu
 pub async fn resume_transfer(app: tauri::AppHandle, transfer_id: &str) -> AppResult<()> {
     if let Some(controller) = find_transfer(transfer_id) {
         if let Some(event) = controller.resume() {
-            let _ = app.emit("transfer-event", &event);
+            emit_transfer_event(&app, &event);
         }
     }
     Ok(())
@@ -511,7 +511,7 @@ pub async fn resume_transfer(app: tauri::AppHandle, transfer_id: &str) -> AppRes
 pub async fn cancel_transfer(app: tauri::AppHandle, transfer_id: &str) -> AppResult<()> {
     if let Some(controller) = find_transfer(transfer_id) {
         if let Some(event) = controller.cancel() {
-            let _ = app.emit("transfer-event", &event);
+            emit_transfer_event(&app, &event);
         }
     }
     Ok(())

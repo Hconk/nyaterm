@@ -11,6 +11,7 @@ use super::zmodem::{
     ZmodemAction, ZmodemDetectResult, ZmodemDetector, ZmodemDirection, ZmodemEvent, ZmodemTransfer,
     start_zmodem_transfer,
 };
+use crate::app_event::{emit_cwd_changed, emit_session_closed};
 use crate::config::AiExecutionProfile;
 use crate::core::SessionOutputCoalescer;
 use crate::core::capture::OutputCaptureProcessor;
@@ -736,7 +737,7 @@ fn pty_session_thread(
                 &format!("session-error-{}", session_id),
                 format!("Failed to open PTY: {}", e),
             );
-            let _ = app.emit(&format!("session-closed-{}", session_id), ());
+            emit_session_closed(&app, &session_id);
             rt_handle.block_on(async {
                 manager.remove_session(&session_id).await;
             });
@@ -754,7 +755,7 @@ fn pty_session_thread(
                         &format!("session-error-{}", session_id),
                         format!("Failed to build shell command: {}", error),
                     );
-                    let _ = app.emit(&format!("session-closed-{}", session_id), ());
+                    emit_session_closed(&app, &session_id);
                     rt_handle.block_on(async {
                         manager.remove_session(&session_id).await;
                     });
@@ -801,7 +802,7 @@ fn pty_session_thread(
                 &format!("session-error-{}", session_id),
                 format!("Failed to spawn shell: {}", e),
             );
-            let _ = app.emit(&format!("session-closed-{}", session_id), ());
+            emit_session_closed(&app, &session_id);
             rt_handle.block_on(async {
                 manager.remove_session(&session_id).await;
             });
@@ -818,7 +819,7 @@ fn pty_session_thread(
                 &format!("session-error-{}", session_id),
                 format!("Failed to take PTY writer: {}", e),
             );
-            let _ = app.emit(&format!("session-closed-{}", session_id), ());
+            emit_session_closed(&app, &session_id);
             rt_handle.block_on(async {
                 manager.remove_session(&session_id).await;
             });
@@ -834,7 +835,7 @@ fn pty_session_thread(
                 &format!("session-error-{}", session_id),
                 format!("Failed to clone PTY reader: {}", e),
             );
-            let _ = app.emit(&format!("session-closed-{}", session_id), ());
+            emit_session_closed(&app, &session_id);
             rt_handle.block_on(async {
                 manager.remove_session(&session_id).await;
             });
@@ -973,7 +974,7 @@ fn pty_session_thread(
                         let next_cwd = rt_for_reader
                             .block_on(async { update_cwd_if_changed(&cwd, path).await });
                         if let Some(next_cwd) = next_cwd {
-                            let _ = app_ref.emit(&cwd_ev, &next_cwd);
+                            emit_cwd_changed(&app_ref, &cwd_ev, &sid_for_rec_reader, &next_cwd);
                         }
                     }
 
@@ -1189,7 +1190,7 @@ fn pty_session_thread(
     rt_handle.block_on(async {
         manager.remove_session(&session_id).await;
     });
-    let _ = app.emit(&format!("session-closed-{}", session_id), ());
+    emit_session_closed(&app, &session_id);
 }
 
 #[cfg(test)]

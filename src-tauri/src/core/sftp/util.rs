@@ -4,7 +4,7 @@
 use crate::error::{AppError, AppResult};
 use serde::{Deserialize, Serialize};
 
-pub(crate) const SFTP_FILE_TYPE_MASK: u32 = 0o170000;
+pub(crate) const SFTP_FILE_TYPE_MASK: u32 = 0o170_000;
 pub(crate) const POSIX_MODE_MASK: u32 = 0o7777;
 
 /// Parsed entry from a remote directory listing for the file explorer.
@@ -150,8 +150,8 @@ pub(crate) fn permissions_to_string(mode: u32, type_char: char) -> String {
 
 pub(crate) fn type_char_from_mode(mode: u32) -> char {
     match mode & SFTP_FILE_TYPE_MASK {
-        0o040000 => 'd',
-        0o120000 => 'l',
+        0o040_000 => 'd',
+        0o120_000 => 'l',
         _ => '-',
     }
 }

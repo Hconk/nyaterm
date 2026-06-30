@@ -117,7 +117,7 @@ fn collect_cloud_sync_log_files(log_dir: &Path, retention_days: u32) -> AppResul
     files.sort_by(|(left_path, left_modified), (right_path, right_modified)| {
         right_modified
             .cmp(left_modified)
-            .then_with(|| right_path.cmp(left_path))
+            .then_with(|| left_path.cmp(right_path))
     });
     Ok(files.into_iter().map(|(path, _)| path).collect())
 }

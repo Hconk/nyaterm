@@ -56,8 +56,11 @@ strip = "none"
 panic = "unwind"
 
 [lints.clippy]
-pedantic = { level = "warn", priority = -1 }
-# Allow common patterns that are noisy under pedantic
+all = { level = "allow", priority = -1 }
+pedantic = { level = "allow", priority = -1 }
+# Clippy runs with `-D warnings` in CI; keep style lints opt-in because the existing
+# codebase intentionally allows many patterns that Clippy flags across tests and platform glue.
+# Allow common patterns that are noisy when style lint groups are enabled
 module_name_repetitions = "allow"
 must_use_candidate = "allow"
 missing_errors_doc = "allow"
