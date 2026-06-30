@@ -5,6 +5,7 @@
 //! WebView, so this module provides a small typed bus that backend services can
 //! adopt incrementally while the Tauri event bridge remains in place.
 
+use serde::Serialize;
 use tauri::{Emitter, Manager};
 use tokio::sync::broadcast;
 
@@ -68,6 +69,17 @@ impl AppEventBus {
 pub fn publish_app_event(app: &tauri::AppHandle, event: AppEvent) {
     if let Some(bus) = app.try_state::<AppEventBus>() {
         bus.publish_lossy(event);
+    }
+}
+
+/// Emit and publish a file-transfer lifecycle event.
+pub fn emit_transfer_event<T>(app: &tauri::AppHandle, payload: &T)
+where
+    T: Serialize,
+{
+    let _ = app.emit("transfer-event", payload);
+    if let Ok(payload) = serde_json::to_value(payload) {
+        publish_app_event(app, AppEvent::Transfer { payload });
     }
 }
 

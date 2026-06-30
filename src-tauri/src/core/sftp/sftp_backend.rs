@@ -5,6 +5,7 @@
 use super::traits::RemoteFs;
 use super::transfer::*;
 use super::util::*;
+use crate::app_event::emit_transfer_event;
 use crate::core::ssh::{SshConnectionHandles, SshRawHandle};
 use crate::error::{AppError, AppResult};
 use crate::observability::{StructuredLog, StructuredLogLevel, log_event};
@@ -1059,10 +1060,7 @@ async fn download_remote_file_inner_with_controller(
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     register_transfer(controller.clone());
-    let _ = app.emit(
-        "transfer-event",
-        &controller.build_event("started", 0, None),
-    );
+    emit_transfer_event(&app, &controller.build_event("started", 0, None));
 
     let (request_kib, pipeline_depth, max_concurrent_writes) = sftp_pipeline_config(ts);
     let chunk_size = sftp_payload_size(request_kib) as u64;
@@ -1114,8 +1112,8 @@ async fn download_remote_file_inner_with_controller(
                 |current| {
                     controller.update_progress(current, total_size);
                     emit_parent_progress(app, parent_controller.as_ref());
-                    let _ = app.emit(
-                        "transfer-event",
+                    emit_transfer_event(
+                        &app,
                         &controller.build_event("progress", total_size, None),
                     );
                 },
@@ -1149,10 +1147,7 @@ async fn download_remote_file_inner_with_controller(
                 if last_progress.elapsed() >= TRANSFER_PROGRESS_INTERVAL {
                     last_progress = Instant::now();
                     emit_parent_progress(app, parent_controller.as_ref());
-                    let _ = app.emit(
-                        "transfer-event",
-                        &controller.build_event("progress", 0, None),
-                    );
+                    emit_transfer_event(&app, &controller.build_event("progress", 0, None));
                 }
             }
         }
@@ -1206,10 +1201,7 @@ async fn download_remote_file_inner_with_controller(
                 1,
             );
             controller.update_progress(size, size);
-            let _ = app.emit(
-                "transfer-event",
-                &controller.build_event("completed", size, None),
-            );
+            emit_transfer_event(&app, &controller.build_event("completed", size, None));
             unregister_transfer(&controller.id());
             Ok(())
         }
@@ -1217,8 +1209,8 @@ async fn download_remote_file_inner_with_controller(
             if matches!(e, AppError::Cancelled(_)) {
                 cleanup_cancelled_download(actual_path).await;
             } else {
-                let _ = app.emit(
-                    "transfer-event",
+                emit_transfer_event(
+                    &app,
                     &controller.build_event("error", 0, Some(e.to_string())),
                 );
             }
@@ -1241,10 +1233,7 @@ async fn upload_local_file_inner_with_controller(
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     register_transfer(controller.clone());
-    let _ = app.emit(
-        "transfer-event",
-        &controller.build_event("started", 0, None),
-    );
+    emit_transfer_event(&app, &controller.build_event("started", 0, None));
 
     let (request_kib, pipeline_depth, max_concurrent_writes) = sftp_pipeline_config(ts);
     let chunk_size = sftp_payload_size(request_kib);
@@ -1294,8 +1283,8 @@ async fn upload_local_file_inner_with_controller(
                 if last_progress.elapsed() >= TRANSFER_PROGRESS_INTERVAL {
                     last_progress = Instant::now();
                     emit_parent_progress(app, parent_controller.as_ref());
-                    let _ = app.emit(
-                        "transfer-event",
+                    emit_transfer_event(
+                        &app,
                         &controller.build_event("progress", total_size, None),
                     );
                 }
@@ -1346,10 +1335,7 @@ async fn upload_local_file_inner_with_controller(
                 1,
             );
             controller.update_progress(size, size);
-            let _ = app.emit(
-                "transfer-event",
-                &controller.build_event("completed", size, None),
-            );
+            emit_transfer_event(&app, &controller.build_event("completed", size, None));
             unregister_transfer(&controller.id());
             Ok(())
         }
@@ -1357,8 +1343,8 @@ async fn upload_local_file_inner_with_controller(
             if matches!(e, AppError::Cancelled(_)) {
                 let _ = cleanup_cancelled_upload(backend, remote_path).await;
             } else {
-                let _ = app.emit(
-                    "transfer-event",
+                emit_transfer_event(
+                    &app,
                     &controller.build_event("error", 0, Some(e.to_string())),
                 );
             }
@@ -1746,8 +1732,8 @@ impl RemoteFs for SftpBackend {
                         "download".to_string(),
                         "file".to_string(),
                     );
-                    let _ = app.emit(
-                        "transfer-event",
+                    emit_transfer_event(
+                        &app,
                         &TransferEvent {
                             id: transfer_id,
                             session_id: session_id.to_string(),
@@ -1925,10 +1911,7 @@ impl RemoteFs for SftpBackend {
             0,
         );
         register_transfer(directory_controller.clone());
-        let _ = app.emit(
-            "transfer-event",
-            &directory_controller.build_event("started", 0, None),
-        );
+        emit_transfer_event(&app, &directory_controller.build_event("started", 0, None));
 
         let result = async {
             let inventory = self
@@ -1958,8 +1941,8 @@ impl RemoteFs for SftpBackend {
                 );
                 directory_controller.update_progress(summary.bytes, summary.bytes);
                 directory_controller.update_item_progress(summary.completed, summary.total_files);
-                let _ = app.emit(
-                    "transfer-event",
+                emit_transfer_event(
+                    &app,
                     &directory_controller.build_event("completed", 0, None),
                 );
                 unregister_transfer(&directory_controller.id());
@@ -1967,14 +1950,14 @@ impl RemoteFs for SftpBackend {
             }
             Err(e) => {
                 if matches!(e, AppError::Cancelled(_)) {
-                    let _ = app.emit(
-                        "transfer-event",
+                    emit_transfer_event(
+                        &app,
                         &directory_controller.build_event("cancelled", 0, None),
                     );
                     cleanup_cancelled_download(local_path).await;
                 } else {
-                    let _ = app.emit(
-                        "transfer-event",
+                    emit_transfer_event(
+                        &app,
                         &directory_controller.build_event("error", 0, Some(e.to_string())),
                     );
                 }
@@ -2024,10 +2007,7 @@ impl RemoteFs for SftpBackend {
             0,
         );
         register_transfer(directory_controller.clone());
-        let _ = app.emit(
-            "transfer-event",
-            &directory_controller.build_event("started", 0, None),
-        );
+        emit_transfer_event(&app, &directory_controller.build_event("started", 0, None));
 
         let result = async {
             let inventory = self
@@ -2062,8 +2042,8 @@ impl RemoteFs for SftpBackend {
                 );
                 directory_controller.update_progress(summary.bytes, summary.bytes);
                 directory_controller.update_item_progress(summary.completed, summary.total_files);
-                let _ = app.emit(
-                    "transfer-event",
+                emit_transfer_event(
+                    &app,
                     &directory_controller.build_event("completed", 0, None),
                 );
                 unregister_transfer(&directory_controller.id());
@@ -2071,14 +2051,14 @@ impl RemoteFs for SftpBackend {
             }
             Err(e) => {
                 if matches!(e, AppError::Cancelled(_)) {
-                    let _ = app.emit(
-                        "transfer-event",
+                    emit_transfer_event(
+                        &app,
                         &directory_controller.build_event("cancelled", 0, None),
                     );
                     let _ = cleanup_cancelled_upload(self, remote_path).await;
                 } else {
-                    let _ = app.emit(
-                        "transfer-event",
+                    emit_transfer_event(
+                        &app,
                         &directory_controller.build_event("error", 0, Some(e.to_string())),
                     );
                 }
@@ -2628,10 +2608,7 @@ async fn run_download_directory_workers(
                 directory_controller.update_item_progress(completed, total_files);
                 let bytes_done = completed_bytes.load(Ordering::SeqCst);
                 directory_controller.update_progress(bytes_done, total_size);
-                let _ = app.emit(
-                    "transfer-event",
-                    &directory_controller.build_event("progress", 0, None),
-                );
+                emit_transfer_event(&app, &directory_controller.build_event("progress", 0, None));
             }
         });
     }
@@ -2726,10 +2703,7 @@ async fn run_upload_directory_workers(
                 directory_controller.update_item_progress(completed, total_files);
                 let bytes_done = completed_bytes.load(Ordering::SeqCst);
                 directory_controller.update_progress(bytes_done, total_size);
-                let _ = app.emit(
-                    "transfer-event",
-                    &directory_controller.build_event("progress", 0, None),
-                );
+                emit_transfer_event(&app, &directory_controller.build_event("progress", 0, None));
             }
         });
     }
@@ -2822,8 +2796,8 @@ async fn download_directory_file_with_session(
                 );
             },
             |_current| {
-                let _ = app_for_progress.emit(
-                    "transfer-event",
+                emit_transfer_event(
+                    &app_for_progress,
                     &directory_controller.build_event("progress", 0, None),
                 );
             },
@@ -2912,10 +2886,7 @@ async fn upload_directory_file_with_session(
 
         if last_progress.elapsed() >= TRANSFER_PROGRESS_INTERVAL {
             last_progress = Instant::now();
-            let _ = app.emit(
-                "transfer-event",
-                &directory_controller.build_event("progress", 0, None),
-            );
+            emit_transfer_event(&app, &directory_controller.build_event("progress", 0, None));
         }
     }
     remote_file.shutdown().await.map_err(|e| {
