@@ -115,14 +115,16 @@ pub async fn translate(
         }
     }
 
-    let data = result
+    let translated_payload = result
         .data
         .ok_or_else(|| AppError::Translation("Ali returned empty result".into()))?;
 
     Ok(TranslateResult {
         original: text.to_string(),
-        translated: data.translated,
-        detected_language: data.detected_language.unwrap_or_else(|| "auto".to_string()),
+        translated: translated_payload.translated,
+        detected_language: translated_payload
+            .detected_language
+            .unwrap_or_else(|| "auto".to_string()),
         provider: "ali".to_string(),
     })
 }

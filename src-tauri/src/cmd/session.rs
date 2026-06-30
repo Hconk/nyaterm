@@ -4,14 +4,14 @@ use crate::core::ssh::{
     self, HostKeyVerifyManager, PendingAuthManager, PendingSshAuthManager, SshAuthResponse,
 };
 use crate::core::{
-    self, QuickCommandsStore, RecordingManager, SessionCommand, SessionInfo, SessionManager,
-    TerminalHistorySearchRequest, TerminalHistorySearchResponse,
+    self, RecordingManager, SessionInfo, SessionManager, TerminalHistorySearchRequest,
+    TerminalHistorySearchResponse,
 };
 use crate::error::{AppError, AppResult};
 use crate::observability::{self, StructuredLog, StructuredLogLevel};
 use crate::utils::fuzzy::{
     FuzzyCandidateResult, FuzzyResult, FuzzySearchCandidate,
-    fuzzy_search_candidates as fuzzy_search_candidate_items, fuzzy_search_items,
+    fuzzy_search_candidates as fuzzy_search_candidate_items,
 };
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -539,75 +539,54 @@ pub async fn list_sessions(core: tauri::State<'_, NyatermCore>) -> AppResult<Vec
 
 #[tauri::command]
 pub async fn add_command_history(
-    state: tauri::State<'_, Arc<SessionManager>>,
+    core: tauri::State<'_, NyatermCore>,
     session_id: String,
     command: String,
 ) -> AppResult<()> {
-    state.add_command(&session_id, command).await;
-    Ok(())
+    core.add_command_history(&session_id, command).await
 }
 
 #[tauri::command]
 pub async fn register_command_submission(
-    state: tauri::State<'_, Arc<SessionManager>>,
+    core: tauri::State<'_, NyatermCore>,
     session_id: String,
     command: String,
 ) -> AppResult<()> {
-    state
-        .register_command_submission(&session_id, command)
-        .await;
-    Ok(())
+    core.register_command_submission(&session_id, command).await
 }
 
 #[tauri::command]
-pub async fn get_command_history(
-    state: tauri::State<'_, Arc<SessionManager>>,
-) -> AppResult<Vec<String>> {
-    Ok(state.get_all_history().await)
+pub async fn get_command_history(core: tauri::State<'_, NyatermCore>) -> AppResult<Vec<String>> {
+    core.get_command_history().await
 }
 
 #[tauri::command]
 pub async fn delete_command_history(
-    state: tauri::State<'_, Arc<SessionManager>>,
+    core: tauri::State<'_, NyatermCore>,
     command: String,
 ) -> AppResult<()> {
-    state.delete_history_command(command).await;
-    Ok(())
+    core.delete_command_history(command).await
 }
 
 #[tauri::command]
 pub async fn fuzzy_search_history(
-    state: tauri::State<'_, Arc<SessionManager>>,
+    core: tauri::State<'_, NyatermCore>,
     pattern: String,
     limit: usize,
     min_command_length: Option<usize>,
     max_command_length: Option<usize>,
 ) -> AppResult<Vec<FuzzyResult>> {
-    Ok(state
-        .fuzzy_search(&pattern, limit, min_command_length, max_command_length)
-        .await)
+    core.fuzzy_search_history(&pattern, limit, min_command_length, max_command_length)
+        .await
 }
 
 #[tauri::command]
 pub async fn fuzzy_search_commands(
-    state: tauri::State<'_, Arc<QuickCommandsStore>>,
+    core: tauri::State<'_, NyatermCore>,
     pattern: String,
     limit: usize,
 ) -> AppResult<Vec<FuzzyResult>> {
-    let cfg = state.snapshot();
-    let items: Vec<(&str, &str)> = cfg
-        .commands
-        .iter()
-        .map(|c| (c.label.as_str(), c.command.as_str()))
-        .collect();
-    Ok(fuzzy_search_items(
-        &items,
-        &pattern,
-        "quickCommand",
-        limit,
-        None,
-        None,
-    ))
+    core.fuzzy_search_quick_commands(&pattern, limit)
 }
 
 #[tauri::command]

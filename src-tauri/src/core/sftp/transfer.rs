@@ -10,7 +10,6 @@ use serde::Serialize;
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use tauri::Emitter;
 use tokio::sync::Notify;
 
 pub(crate) const TRANSFER_CANCELLED_MESSAGE: &str = "Transfer cancelled";

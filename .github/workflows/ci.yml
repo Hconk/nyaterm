@@ -93,10 +93,15 @@ jobs:
         with:
           node-version: "20"
           cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            docs-site/pnpm-lock.yaml
 
-      - name: Install dependencies
+      - name: Install app dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Install docs dependencies
+        run: pnpm --dir docs-site install --frozen-lockfile
 
       - name: Check frontend formatting
         run: pnpm format:check

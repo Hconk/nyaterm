@@ -5,5 +5,5 @@ fn main() {
         println!("cargo:rustc-env=NYATERM_GITHUB_GIST_CLIENT_ID={client_id}");
     }
 
-    tauri_build::build()
+    tauri_build::build();
 }

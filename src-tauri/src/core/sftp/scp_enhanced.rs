@@ -7,7 +7,6 @@ use crate::error::{AppError, AppResult};
 use crate::observability::{StructuredLog, StructuredLogLevel, log_event};
 use russh::ChannelMsg;
 use std::sync::Arc;
-use tauri::Emitter;
 
 pub(crate) struct ScpEnhancedBackend {
     ssh_handle: Arc<SshConnectionHandles>,

@@ -81,7 +81,7 @@ const AGENT_SYSTEM_PROMPT_ZH: &str = r#"你是一个终端自动化 Agent，通�
 10. riskLevel 规则：只读命令 → low，普通写操作 → medium，删除/重启/权限修改 → high，不可逆破坏 → critical。
 11. 调用 execute_command 时必须同时提供 riskLevel 和 riskReason；riskReason 要简短说明为什么这样分级。"#;
 
-const AGENT_SYSTEM_PROMPT_EN: &str = r#"You are a terminal automation agent that completes tasks using a think-execute-observe loop.
+const AGENT_SYSTEM_PROMPT_EN: &str = r"You are a terminal automation agent that completes tasks using a think-execute-observe loop.
 
 In each turn, do exactly one thing: call the execute_command tool to execute one command, or call the final_answer tool to finish.
 
@@ -96,7 +96,7 @@ Rules:
 8. Do not ask the user for passwords, private keys, or tokens.
 9. Commands must fit the user's current system and shell environment.
 10. riskLevel guidance: read-only commands -> low, normal write actions -> medium, delete/restart/permission changes -> high, irreversible destructive actions -> critical.
-11. execute_command calls must include both riskLevel and riskReason. Keep riskReason brief and explain why the risk applies."#;
+11. execute_command calls must include both riskLevel and riskReason. Keep riskReason brief and explain why the risk applies.";
 
 #[derive(Clone, Copy, Eq, Hash, PartialEq)]
 enum PromptLanguage {
@@ -146,7 +146,7 @@ pub(super) fn build_agent_prompt(request: &AiChatRequest, settings: &AiSettings)
     let ctx = &request.context;
     if resolve_prompt_language(&request.options.language) == PromptLanguage::ZhCn {
         format!(
-            r#"用户任务：
+            r"用户任务：
 {user_input}
 
 当前连接上下文：
@@ -164,7 +164,7 @@ pub(super) fn build_agent_prompt(request: &AiChatRequest, settings: &AiSettings)
 - 面向用户的说明、总结以及推理过程使用：{language}
 - 命令、路径、文件名、配置键名保持原样，不要翻译
 
-请开始执行任务。每轮调用且只调用一个工具。"#,
+请开始执行任务。每轮调用且只调用一个工具。",
             user_input = request.user_input,
             connection_name = ctx.connection_name.as_deref().unwrap_or("-"),
             host = ctx.host.as_deref().unwrap_or("-"),
@@ -178,7 +178,7 @@ pub(super) fn build_agent_prompt(request: &AiChatRequest, settings: &AiSettings)
         )
     } else {
         format!(
-            r#"User task:
+            r"User task:
 {user_input}
 
 Current connection context:
@@ -197,7 +197,7 @@ Requirements:
 - Prefer {language} for reasoning when possible.
 - Keep commands, paths, file names, and configuration keys unchanged.
 
-Start the task now. Call exactly one tool per turn."#,
+Start the task now. Call exactly one tool per turn.",
             user_input = request.user_input,
             connection_name = ctx.connection_name.as_deref().unwrap_or("-"),
             host = ctx.host.as_deref().unwrap_or("-"),
@@ -253,7 +253,7 @@ pub(super) fn build_prompt(request: &AiChatRequest, settings: &AiSettings) -> St
             AiAction::CustomFileAction => "根据用户配置的文件 AI 功能处理文件内容",
         };
         format!(
-            r#"任务：{action}
+            r"任务：{action}
 用户需求：
 {user_input}
 
@@ -280,7 +280,7 @@ pub(super) fn build_prompt(request: &AiChatRequest, settings: &AiSettings) -> St
 - 最多生成 {max_commands} 条命令
 - 优先生成只读诊断命令
 - 如果信息不足，请给出验证命令
-- 必须返回 JSON 对象，不要返回 Markdown"#,
+- 必须返回 JSON 对象，不要返回 Markdown",
             user_input = request.user_input,
             connection_name = ctx.connection_name.as_deref().unwrap_or("-"),
             host = ctx.host.as_deref().unwrap_or("-"),
@@ -325,7 +325,7 @@ pub(super) fn build_prompt(request: &AiChatRequest, settings: &AiSettings) -> St
             }
         };
         format!(
-            r#"Task: {action}
+            r"Task: {action}
 User request:
 {user_input}
 
@@ -353,7 +353,7 @@ Requirements:
 - Generate at most {max_commands} commands.
 - Prefer read-only diagnostic commands first.
 - If information is insufficient, provide verification commands.
-- Return a JSON object only. Do not return Markdown."#,
+- Return a JSON object only. Do not return Markdown.",
             user_input = request.user_input,
             connection_name = ctx.connection_name.as_deref().unwrap_or("-"),
             host = ctx.host.as_deref().unwrap_or("-"),

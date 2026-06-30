@@ -16,6 +16,7 @@ fn generate_tkk() -> (i64, i64) {
     (now, r1.abs() + r2)
 }
 
+#[allow(clippy::many_single_char_names)]
 fn tk(text: &str, tkk: (i64, i64)) -> String {
     let mut a = tkk.0;
     let b = tkk.1;
