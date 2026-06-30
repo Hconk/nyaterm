@@ -8,15 +8,17 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::app_event::AppEventBus;
-use crate::config::{CloudSyncHistoryEntry, CloudSyncStatus};
+use crate::config::{
+    CloudSyncHistoryEntry, CloudSyncStatus, QuickCommand, QuickCommandCategory, QuickCommandsConfig,
+};
 use crate::core::ai::AgentApprovalManager;
 use crate::core::sftp::TransferDuplicateManager;
 use crate::core::ssh::{
     HostKeyVerifyManager, PendingAuthManager, PendingSshAuthManager, TunnelManager,
 };
 use crate::core::{
-    CloudSyncManager, QuickCommandsStore, RecordingManager, SessionCommand, SessionInfo,
-    SessionManager,
+    CloudSyncManager, QuickCommandsImportResult, QuickCommandsImportSource, QuickCommandsStore,
+    RecordingManager, SessionCommand, SessionInfo, SessionManager,
 };
 use crate::error::{AppError, AppResult};
 use crate::observability::{self, StructuredLog, StructuredLogLevel};
@@ -130,6 +132,72 @@ impl NyatermCore {
         self.session_manager
             .send_command(session_id, SessionCommand::ZmodemCancel)
             .await
+    }
+
+    /// Return the current quick-command configuration snapshot.
+    pub fn get_quick_commands(&self) -> AppResult<QuickCommandsConfig> {
+        Ok(self.quick_commands_store.snapshot())
+    }
+
+    /// Replace and persist the quick-command configuration.
+    pub fn save_quick_commands(
+        &self,
+        app: &tauri::AppHandle,
+        config: QuickCommandsConfig,
+    ) -> AppResult<()> {
+        self.quick_commands_store.save_all(app, config)
+    }
+
+    /// Insert or update a quick command and optionally add its category.
+    pub fn upsert_quick_command(
+        &self,
+        app: &tauri::AppHandle,
+        command: QuickCommand,
+        new_category: Option<QuickCommandCategory>,
+    ) -> AppResult<QuickCommandsConfig> {
+        self.quick_commands_store.upsert(app, command, new_category)
+    }
+
+    /// Increment a quick command usage counter.
+    pub fn increment_quick_command_use_count(
+        &self,
+        app: &tauri::AppHandle,
+        id: &str,
+    ) -> AppResult<()> {
+        self.quick_commands_store.increment_use_count(app, id)
+    }
+
+    /// Import quick commands from a supported external file.
+    pub fn import_quick_commands(
+        &self,
+        app: &tauri::AppHandle,
+        file_path: &str,
+        source: QuickCommandsImportSource,
+    ) -> AppResult<QuickCommandsImportResult> {
+        self.quick_commands_store
+            .import_from_file(app, file_path, source)
+    }
+
+    /// Search quick commands using the shared fuzzy matching behavior.
+    pub fn fuzzy_search_quick_commands(
+        &self,
+        pattern: &str,
+        limit: usize,
+    ) -> AppResult<Vec<FuzzyResult>> {
+        let cfg = self.quick_commands_store.snapshot();
+        let items: Vec<(&str, &str)> = cfg
+            .commands
+            .iter()
+            .map(|command| (command.label.as_str(), command.command.as_str()))
+            .collect();
+        Ok(crate::utils::fuzzy::fuzzy_search_items(
+            &items,
+            pattern,
+            "quickCommand",
+            limit,
+            None,
+            None,
+        ))
     }
 
     /// Add a command to the persisted command history.

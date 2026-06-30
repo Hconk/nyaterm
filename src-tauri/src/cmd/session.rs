@@ -4,14 +4,14 @@ use crate::core::ssh::{
     self, HostKeyVerifyManager, PendingAuthManager, PendingSshAuthManager, SshAuthResponse,
 };
 use crate::core::{
-    self, QuickCommandsStore, RecordingManager, SessionInfo, SessionManager,
-    TerminalHistorySearchRequest, TerminalHistorySearchResponse,
+    self, RecordingManager, SessionInfo, SessionManager, TerminalHistorySearchRequest,
+    TerminalHistorySearchResponse,
 };
 use crate::error::{AppError, AppResult};
 use crate::observability::{self, StructuredLog, StructuredLogLevel};
 use crate::utils::fuzzy::{
     FuzzyCandidateResult, FuzzyResult, FuzzySearchCandidate,
-    fuzzy_search_candidates as fuzzy_search_candidate_items, fuzzy_search_items,
+    fuzzy_search_candidates as fuzzy_search_candidate_items,
 };
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -582,24 +582,11 @@ pub async fn fuzzy_search_history(
 
 #[tauri::command]
 pub async fn fuzzy_search_commands(
-    state: tauri::State<'_, Arc<QuickCommandsStore>>,
+    core: tauri::State<'_, NyatermCore>,
     pattern: String,
     limit: usize,
 ) -> AppResult<Vec<FuzzyResult>> {
-    let cfg = state.snapshot();
-    let items: Vec<(&str, &str)> = cfg
-        .commands
-        .iter()
-        .map(|c| (c.label.as_str(), c.command.as_str()))
-        .collect();
-    Ok(fuzzy_search_items(
-        &items,
-        &pattern,
-        "quickCommand",
-        limit,
-        None,
-        None,
-    ))
+    core.fuzzy_search_quick_commands(&pattern, limit)
 }
 
 #[tauri::command]

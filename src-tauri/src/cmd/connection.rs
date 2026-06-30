@@ -1,9 +1,9 @@
+use crate::app_core::NyatermCore;
 use crate::config::{self, Group, QuickCommandsConfig, SavedConnection, SavedPassword, SshKey};
-use crate::core::{QuickCommandsImportResult, QuickCommandsImportSource, QuickCommandsStore};
+use crate::core::{QuickCommandsImportResult, QuickCommandsImportSource};
 use crate::error::{AppError, AppResult};
 use crate::utils::crypto;
 use std::path::Path;
-use std::sync::Arc;
 use tauri::Emitter;
 
 fn schedule_cloud_sync_notify(app: tauri::AppHandle) {
@@ -581,19 +581,17 @@ pub fn clear_all_connections(app: tauri::AppHandle) -> AppResult<()> {
 }
 
 #[tauri::command]
-pub fn get_quick_commands(
-    state: tauri::State<'_, Arc<QuickCommandsStore>>,
-) -> AppResult<QuickCommandsConfig> {
-    Ok(state.snapshot())
+pub fn get_quick_commands(core: tauri::State<'_, NyatermCore>) -> AppResult<QuickCommandsConfig> {
+    core.get_quick_commands()
 }
 
 #[tauri::command]
 pub fn save_quick_commands(
     app: tauri::AppHandle,
-    state: tauri::State<'_, Arc<QuickCommandsStore>>,
+    core: tauri::State<'_, NyatermCore>,
     config: QuickCommandsConfig,
 ) -> AppResult<()> {
-    state.save_all(&app, config)?;
+    core.save_quick_commands(&app, config)?;
     let _ = app.emit("quick-commands-changed", ());
     schedule_cloud_sync_notify(app.clone());
     Ok(())
@@ -602,11 +600,11 @@ pub fn save_quick_commands(
 #[tauri::command]
 pub fn upsert_quick_command(
     app: tauri::AppHandle,
-    state: tauri::State<'_, Arc<QuickCommandsStore>>,
+    core: tauri::State<'_, NyatermCore>,
     command: config::QuickCommand,
     new_category: Option<config::QuickCommandCategory>,
 ) -> AppResult<()> {
-    state.upsert(&app, command, new_category)?;
+    core.upsert_quick_command(&app, command, new_category)?;
     let _ = app.emit("quick-commands-changed", ());
     schedule_cloud_sync_notify(app.clone());
     Ok(())
@@ -615,21 +613,21 @@ pub fn upsert_quick_command(
 #[tauri::command]
 pub fn increment_quick_command_use_count(
     app: tauri::AppHandle,
-    state: tauri::State<'_, Arc<QuickCommandsStore>>,
+    core: tauri::State<'_, NyatermCore>,
     id: String,
 ) -> AppResult<()> {
-    state.increment_use_count(&app, &id)?;
+    core.increment_quick_command_use_count(&app, &id)?;
     Ok(())
 }
 
 #[tauri::command]
 pub fn import_quick_commands(
     app: tauri::AppHandle,
-    state: tauri::State<'_, Arc<QuickCommandsStore>>,
+    core: tauri::State<'_, NyatermCore>,
     file_path: String,
     source: QuickCommandsImportSource,
 ) -> AppResult<QuickCommandsImportResult> {
-    let result = state.import_from_file(&app, &file_path, source)?;
+    let result = core.import_quick_commands(&app, &file_path, source)?;
     let _ = app.emit("quick-commands-changed", ());
     schedule_cloud_sync_notify(app.clone());
     Ok(result)

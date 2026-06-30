@@ -71,7 +71,7 @@ pub struct NyatermCore {
 - session 创建 API：`create_ssh_session`、`create_local_session`、Telnet、Serial 等；
 - settings API：`get_app_settings`、`save_app_settings`，并保持 `AppContext` / `ChildAppProvider` 与 Rust 默认值一致；
 - saved connections / groups API：`get_saved_connections`、`save_connection`、分组增删改；
-- quick commands API；
+- quick commands API（list/save/upsert/import/use-count/fuzzy search 已收敛到 `NyatermCore`）；
 - command history API（add/register/list/delete/fuzzy search 已收敛到 `NyatermCore`）；
 - SFTP / transfer API；
 - cloud sync API（status/history/test/push/pull/conflict resolution 已收敛到 `NyatermCore`）；
@@ -296,7 +296,7 @@ pub struct Action {
 
 ### Phase 1：补齐 typed app services
 
-- 将 settings、saved connections、quick commands、SFTP、backup、AI history/audit 和 agent approval 继续收敛为 typed services；command history 的 add/register/list/delete/fuzzy search 与 cloud sync 的 status/history/test/push/pull/conflict resolution 已先行接入 `NyatermCore`。
+- 将 settings、saved connections、quick commands、SFTP、backup、AI history/audit 和 agent approval 继续收敛为 typed services；quick commands 的 list/save/upsert/import/use-count/fuzzy search、command history 的 add/register/list/delete/fuzzy search 与 cloud sync 的 status/history/test/push/pull/conflict resolution 已先行接入 `NyatermCore`。
 - 为 session 创建链路补齐 local / SSH / Telnet / Serial typed API。
 - 把迁移后的 Tauri commands 保持为薄 bridge，避免 React UI 与 egui UI 分叉业务逻辑。
 - 对敏感配置继续复用现有 crypto/storage helpers。
