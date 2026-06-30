@@ -1,7 +1,7 @@
 use crate::app_core::NyatermCore;
 use crate::config;
 use crate::core::ssh::{
-    self, HostKeyVerifyManager, PendingAuthManager, PendingSshAuthManager, SshAuthResponse,
+    HostKeyVerifyManager, PendingAuthManager, PendingSshAuthManager, SshAuthResponse,
 };
 use crate::core::{
     self, RecordingManager, SessionInfo, SessionManager, TerminalHistorySearchRequest,
@@ -20,228 +20,89 @@ use tauri::{Emitter, Manager};
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StartupCommandPayload {
-    command: String,
-    delay_ms: u64,
+    pub(crate) command: String,
+    pub(crate) delay_ms: u64,
 }
 
 #[tauri::command]
 pub async fn create_ssh_session(
     app: tauri::AppHandle,
     window: tauri::WebviewWindow,
-    state: tauri::State<'_, Arc<SessionManager>>,
-    recording_state: tauri::State<'_, Arc<RecordingManager>>,
+    core: tauri::State<'_, NyatermCore>,
     connection_id: String,
     create_request_id: Option<String>,
     startup_command: Option<StartupCommandPayload>,
 ) -> AppResult<String> {
-    let ssh_config = ssh::load_saved_ssh_config(&app, &connection_id)?;
-    let pending_creation = state.begin_session_creation(create_request_id).await;
-    let (guard, cancel_rx) = match pending_creation {
-        Some((guard, cancel_rx)) => (Some(guard), Some(cancel_rx)),
-        None => (None, None),
-    };
-
-    let session_id = ssh::create_ssh_session(
-        app.clone(),
-        state.inner().clone(),
-        ssh_config,
-        Some(connection_id.clone()),
-        Some(window.label().to_string()),
-        cancel_rx,
-        startup_command.map(|command| ssh::SshStartupCommand {
-            command: command.command,
-            delay_ms: command.delay_ms,
-        }),
-    )
-    .await?;
-    drop(guard);
-    if let Err(error) = crate::storage::mark_connection_used(&connection_id) {
-        tracing::warn!(connection_id, %error, "Failed to mark connection as recently used");
-    }
-    maybe_start_auto_recording(
-        &app,
-        state.inner().as_ref(),
-        recording_state.inner().clone(),
-        &session_id,
-    )
-    .await;
-    Ok(session_id)
+    return core
+        .create_ssh_session(
+            app,
+            connection_id,
+            Some(window.label().to_string()),
+            create_request_id,
+            startup_command,
+        )
+        .await;
 }
 
 #[tauri::command]
 pub async fn create_multiplexed_ssh_session(
     app: tauri::AppHandle,
-    state: tauri::State<'_, Arc<SessionManager>>,
-    recording_state: tauri::State<'_, Arc<RecordingManager>>,
+    core: tauri::State<'_, NyatermCore>,
     source_session_id: String,
     startup_command: Option<StartupCommandPayload>,
 ) -> AppResult<String> {
-    let session_id = ssh::create_multiplexed_ssh_session(
-        app.clone(),
-        state.inner().clone(),
-        &source_session_id,
-        startup_command.map(|command| ssh::SshStartupCommand {
-            command: command.command,
-            delay_ms: command.delay_ms,
-        }),
-    )
-    .await?;
-    maybe_start_auto_recording(
-        &app,
-        state.inner().as_ref(),
-        recording_state.inner().clone(),
-        &session_id,
-    )
-    .await;
-    Ok(session_id)
+    return core
+        .create_multiplexed_ssh_session(app, &source_session_id, startup_command)
+        .await;
 }
 
 #[tauri::command]
 pub async fn create_local_session(
     app: tauri::AppHandle,
     window: tauri::WebviewWindow,
-    state: tauri::State<'_, Arc<SessionManager>>,
-    recording_state: tauri::State<'_, Arc<RecordingManager>>,
+    core: tauri::State<'_, NyatermCore>,
     connection_id: Option<String>,
     create_request_id: Option<String>,
 ) -> AppResult<String> {
-    let pending_creation = state.begin_session_creation(create_request_id).await;
-    let (guard, _cancel_rx) = match pending_creation {
-        Some((guard, cancel_rx)) => (Some(guard), Some(cancel_rx)),
-        None => (None, None),
-    };
-    let config = if let Some(ref cid) = connection_id {
-        let conn = config::load_connection_by_id(&app, cid)?;
-        match conn.config {
-            config::ConnectionType::LocalTerminal {
-                shell_path,
-                shell_args,
-                working_dir,
-                ..
-            } => Some(core::LocalSessionConfig {
-                shell_path,
-                shell_args,
-                working_dir,
-                name: conn.name,
-            }),
-            _ => None,
-        }
-    } else {
-        None
-    };
-    let session_id = core::create_local_session(
-        app.clone(),
-        state.inner().clone(),
-        config,
-        Some(window.label().to_string()),
-    )
-    .await?;
-    drop(guard);
-    if let Some(connection_id) = connection_id {
-        if let Err(error) = crate::storage::mark_connection_used(&connection_id) {
-            tracing::warn!(connection_id, %error, "Failed to mark connection as recently used");
-        }
-    }
-    maybe_start_auto_recording(
-        &app,
-        state.inner().as_ref(),
-        recording_state.inner().clone(),
-        &session_id,
-    )
-    .await;
-    Ok(session_id)
+    return core
+        .create_local_session(
+            app,
+            connection_id,
+            Some(window.label().to_string()),
+            create_request_id,
+        )
+        .await;
 }
 
 #[tauri::command]
 pub async fn create_telnet_session(
     app: tauri::AppHandle,
     window: tauri::WebviewWindow,
-    state: tauri::State<'_, Arc<SessionManager>>,
-    recording_state: tauri::State<'_, Arc<RecordingManager>>,
+    core: tauri::State<'_, NyatermCore>,
     connection_id: Option<String>,
     host: Option<String>,
     port: Option<u16>,
     name: Option<String>,
     create_request_id: Option<String>,
 ) -> AppResult<String> {
-    let pending_creation = state.begin_session_creation(create_request_id).await;
-    let (guard, _cancel_rx) = match pending_creation {
-        Some((guard, cancel_rx)) => (Some(guard), Some(cancel_rx)),
-        None => (None, None),
-    };
-    let cfg = if let Some(ref cid) = connection_id {
-        let conn = config::load_connection_by_id(&app, cid)?;
-        match conn.config {
-            config::ConnectionType::Telnet {
-                host: ref ch,
-                port: cp,
-                backspace_mode,
-                raw_tcp_cli,
-                enter_mode,
-                local_echo,
-                local_line_edit,
-                force_character_at_a_time,
-                send_naws,
-                send_sga,
-                ..
-            } => core::TelnetSessionConfig {
-                host: ch.clone(),
-                port: cp,
-                name: conn.name.clone(),
-                backspace_mode,
-                raw_tcp_cli,
-                enter_mode: core::TelnetEnterMode::from_config_value(&enter_mode),
-                local_echo,
-                local_line_edit,
-                force_character_at_a_time,
-                send_naws,
-                send_sga,
-            },
-            _ => {
-                return Err(AppError::Config(
-                    "Connection is not a Telnet connection".to_string(),
-                ));
-            }
-        }
-    } else {
-        core::TelnetSessionConfig {
-            host: host.ok_or_else(|| AppError::Config("host is required".to_string()))?,
-            port: port.unwrap_or(23),
-            name: name.unwrap_or_else(|| "Telnet".to_string()),
-            ..Default::default()
-        }
-    };
-    let marked_connection_id = connection_id.clone();
-    let session_id = core::create_telnet_session(
-        app.clone(),
-        state.inner().clone(),
-        cfg,
-        connection_id,
-        Some(window.label().to_string()),
-    )
-    .await?;
-    drop(guard);
-    if let Some(connection_id) = marked_connection_id {
-        if let Err(error) = crate::storage::mark_connection_used(&connection_id) {
-            tracing::warn!(connection_id, %error, "Failed to mark connection as recently used");
-        }
-    }
-    maybe_start_auto_recording(
-        &app,
-        state.inner().as_ref(),
-        recording_state.inner().clone(),
-        &session_id,
-    )
-    .await;
-    Ok(session_id)
+    return core
+        .create_telnet_session(
+            app,
+            connection_id,
+            host,
+            port,
+            name,
+            Some(window.label().to_string()),
+            create_request_id,
+        )
+        .await;
 }
 
 #[tauri::command]
 pub async fn create_serial_session(
     app: tauri::AppHandle,
     window: tauri::WebviewWindow,
-    state: tauri::State<'_, Arc<SessionManager>>,
-    recording_state: tauri::State<'_, Arc<RecordingManager>>,
+    core: tauri::State<'_, NyatermCore>,
     connection_id: Option<String>,
     port_name: Option<String>,
     baud_rate: Option<u32>,
@@ -251,75 +112,23 @@ pub async fn create_serial_session(
     name: Option<String>,
     create_request_id: Option<String>,
 ) -> AppResult<String> {
-    let pending_creation = state.begin_session_creation(create_request_id).await;
-    let (guard, _cancel_rx) = match pending_creation {
-        Some((guard, cancel_rx)) => (Some(guard), Some(cancel_rx)),
-        None => (None, None),
-    };
-    let cfg = if let Some(ref cid) = connection_id {
-        let conn = config::load_connection_by_id(&app, cid)?;
-        match conn.config {
-            config::ConnectionType::Serial {
-                port_name,
-                baud_rate,
-                data_bits,
-                parity,
-                stop_bits,
-                backspace_mode,
-                ..
-            } => core::SerialConfig {
-                port_name,
-                baud_rate,
-                data_bits,
-                parity,
-                stop_bits,
-                name: conn.name,
-                backspace_mode,
-            },
-            _ => {
-                return Err(AppError::Config(
-                    "Connection is not a Serial connection".to_string(),
-                ));
-            }
-        }
-    } else {
-        core::SerialConfig {
-            port_name: port_name
-                .ok_or_else(|| AppError::Config("port_name is required".to_string()))?,
-            baud_rate: baud_rate.unwrap_or(115_200),
-            data_bits: data_bits.unwrap_or(8),
-            parity: parity.unwrap_or_else(|| "none".to_string()),
-            stop_bits: stop_bits.unwrap_or_else(|| "1".to_string()),
-            name: name.unwrap_or_else(|| "Serial".to_string()),
-            backspace_mode: "ctrl_h".to_string(),
-        }
-    };
-    let marked_connection_id = connection_id.clone();
-    let session_id = core::create_serial_session(
-        app.clone(),
-        state.inner().clone(),
-        cfg,
-        connection_id,
-        Some(window.label().to_string()),
-    )
-    .await?;
-    drop(guard);
-    if let Some(connection_id) = marked_connection_id {
-        if let Err(error) = crate::storage::mark_connection_used(&connection_id) {
-            tracing::warn!(connection_id, %error, "Failed to mark connection as recently used");
-        }
-    }
-    maybe_start_auto_recording(
-        &app,
-        state.inner().as_ref(),
-        recording_state.inner().clone(),
-        &session_id,
-    )
-    .await;
-    Ok(session_id)
+    return core
+        .create_serial_session(
+            app,
+            connection_id,
+            port_name,
+            baud_rate,
+            data_bits,
+            parity,
+            stop_bits,
+            name,
+            Some(window.label().to_string()),
+            create_request_id,
+        )
+        .await;
 }
 
-async fn maybe_start_auto_recording(
+pub(crate) async fn maybe_start_auto_recording(
     app: &tauri::AppHandle,
     session_manager: &SessionManager,
     recording_manager: Arc<RecordingManager>,
