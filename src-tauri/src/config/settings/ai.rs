@@ -551,13 +551,13 @@ pub fn normalize_ai_settings(settings: &mut AiSettings) -> bool {
         let active_model = settings
             .provider_profiles
             .iter()
-            .find(|profile| profile.id == settings.active_profile_id && profile.enabled)
+            .find(|profile| profile.id == settings.active_profile_id)
             .and_then(model_from_profile)
             .and_then(|legacy_model| {
                 settings
                     .models
                     .iter()
-                    .find(|model| model.enabled && model.id == legacy_model.id)
+                    .find(|model| model.id == legacy_model.id)
                     .map(|model| model.id.clone())
             });
 
