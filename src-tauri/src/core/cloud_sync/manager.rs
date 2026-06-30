@@ -7,6 +7,9 @@ use std::time::{Duration, Instant};
 use tauri::{Emitter, Manager, async_runtime};
 use tokio::sync::{Mutex, Notify};
 
+use crate::app_event::{
+    emit_cloud_sync_conflict, emit_cloud_sync_history_changed, emit_cloud_sync_status_changed,
+};
 use crate::config::{
     self, CloudConflictPreview, CloudSyncHistoryEntry, CloudSyncSettings, CloudSyncState,
     CloudSyncStatus,
@@ -889,7 +892,7 @@ impl CloudSyncManager {
         };
         log_history_entry(&entry);
         let snapshot = read_cloud_sync_history_from_logs(&app).unwrap_or_default();
-        let _ = app.emit("cloud-sync-history-changed", &snapshot);
+        emit_cloud_sync_history_changed(&app, &snapshot);
     }
 
     async fn record_failure(&self, kind: &str, trigger: &str, error: &AppError) {
@@ -1027,7 +1030,7 @@ impl CloudSyncManager {
             status.clone()
         };
         if let Some(app) = app {
-            let _ = app.emit("cloud-sync-status-changed", &status);
+            emit_cloud_sync_status_changed(&app, &status);
             crate::tray::schedule_refresh(&app);
         }
     }
@@ -1054,8 +1057,8 @@ impl CloudSyncManager {
         };
         *self.status.lock().await = status.clone();
         if let Some(app) = app {
-            let _ = app.emit("cloud-sync-status-changed", &status);
-            let _ = app.emit("cloud-sync-conflict", &conflict);
+            emit_cloud_sync_status_changed(&app, &status);
+            emit_cloud_sync_conflict(&app, &conflict);
             crate::tray::schedule_refresh(&app);
         }
     }
@@ -1073,8 +1076,8 @@ impl CloudSyncManager {
             status.clone()
         };
         if let Some(app) = app {
-            let _ = app.emit("cloud-sync-status-changed", &status);
-            let _ = app.emit("cloud-sync-conflict", &Option::<CloudConflictPreview>::None);
+            emit_cloud_sync_status_changed(&app, &status);
+            emit_cloud_sync_conflict(&app, &Option::<CloudConflictPreview>::None);
             crate::tray::schedule_refresh(&app);
         }
     }

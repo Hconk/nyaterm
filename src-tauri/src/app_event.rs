@@ -23,6 +23,8 @@ pub enum AppEvent {
     CommandHistoryChanged,
     Transfer { payload: serde_json::Value },
     OtpRequest { payload: serde_json::Value },
+    SshAuthRequest { payload: serde_json::Value },
+    HostKeyVerify { payload: serde_json::Value },
     CloudSyncStatusChanged { payload: serde_json::Value },
     CloudSyncHistoryChanged { payload: serde_json::Value },
     CloudSyncConflict { payload: serde_json::Value },
@@ -70,6 +72,80 @@ pub fn publish_app_event(app: &tauri::AppHandle, event: AppEvent) {
     if let Some(bus) = app.try_state::<AppEventBus>() {
         bus.publish_lossy(event);
     }
+}
+
+fn emit_json_payload_event<T>(
+    app: &tauri::AppHandle,
+    event_name: &str,
+    payload: &T,
+    build_event: impl FnOnce(serde_json::Value) -> AppEvent,
+) where
+    T: Serialize,
+{
+    let _ = app.emit(event_name, payload);
+    if let Ok(payload) = serde_json::to_value(payload) {
+        publish_app_event(app, build_event(payload));
+    }
+}
+
+/// Emit and publish an OTP / keyboard-interactive request.
+pub fn emit_otp_request<T>(app: &tauri::AppHandle, payload: &T)
+where
+    T: Serialize,
+{
+    emit_json_payload_event(app, "otp-request", payload, |payload| {
+        AppEvent::OtpRequest { payload }
+    });
+}
+
+/// Emit and publish an SSH authentication request.
+pub fn emit_ssh_auth_request<T>(app: &tauri::AppHandle, payload: &T)
+where
+    T: Serialize,
+{
+    emit_json_payload_event(app, "ssh-auth-request", payload, |payload| {
+        AppEvent::SshAuthRequest { payload }
+    });
+}
+
+/// Emit and publish an SSH host-key verification request.
+pub fn emit_host_key_verify<T>(app: &tauri::AppHandle, payload: &T)
+where
+    T: Serialize,
+{
+    emit_json_payload_event(app, "host-key-verify", payload, |payload| {
+        AppEvent::HostKeyVerify { payload }
+    });
+}
+
+/// Emit and publish a cloud-sync status update.
+pub fn emit_cloud_sync_status_changed<T>(app: &tauri::AppHandle, payload: &T)
+where
+    T: Serialize,
+{
+    emit_json_payload_event(app, "cloud-sync-status-changed", payload, |payload| {
+        AppEvent::CloudSyncStatusChanged { payload }
+    });
+}
+
+/// Emit and publish a cloud-sync history update.
+pub fn emit_cloud_sync_history_changed<T>(app: &tauri::AppHandle, payload: &T)
+where
+    T: Serialize,
+{
+    emit_json_payload_event(app, "cloud-sync-history-changed", payload, |payload| {
+        AppEvent::CloudSyncHistoryChanged { payload }
+    });
+}
+
+/// Emit and publish a cloud-sync conflict update.
+pub fn emit_cloud_sync_conflict<T>(app: &tauri::AppHandle, payload: &T)
+where
+    T: Serialize,
+{
+    emit_json_payload_event(app, "cloud-sync-conflict", payload, |payload| {
+        AppEvent::CloudSyncConflict { payload }
+    });
 }
 
 /// Emit and publish a file-transfer lifecycle event.
