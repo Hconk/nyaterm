@@ -42,7 +42,7 @@ src/                   # 迁移期保留 React UI，最终删除或归档
 
 ## Core facade
 
-当前 `src-tauri/src/lib.rs` 中直接构造并注入多个 manager。egui 迁移应先引入统一 facade：
+当前分支已经开始落地统一 facade：`src-tauri/src/app_core.rs` 中的 `NyatermCore` 负责集中持有 backend managers，并为 Tauri command 与未来 egui UI 提供共享 typed API。迁移目标仍是继续把 `src-tauri/src/lib.rs` 中的直接 manager 组装逐步收敛到 facade：
 
 ```rust
 pub struct NyatermCore {
@@ -57,24 +57,30 @@ pub struct NyatermCore {
 }
 ```
 
-第一批 typed API：
+当前已接入的 session typed API：
 
-- `create_ssh_session`
-- `create_local_session`
+- `list_sessions`
 - `write_to_session`
 - `resize_session`
+- `attach_session`
+- `start_zmodem_upload` / `cancel_zmodem_upload`
 - `close_session`
-- `list_sessions`
-- `get_app_settings`
-- `save_app_settings`
-- `get_saved_connections`
-- `save_connection`
 
-Tauri commands 保持对外名称不变，但内部调用这些 typed API。这样现有 React UI 与未来 egui UI 可以共用同一后端服务。
+下一批需要补齐的 typed app services：
+
+- session 创建 API：`create_ssh_session`、`create_local_session`、Telnet、Serial 等；
+- settings API：`get_app_settings`、`save_app_settings`，并保持 `AppContext` / `ChildAppProvider` 与 Rust 默认值一致；
+- saved connections / groups API：`get_saved_connections`、`save_connection`、分组增删改；
+- quick commands API；
+- SFTP / transfer API；
+- cloud sync / backup API；
+- AI history / audit / agent approval API。
+
+Tauri commands 保持对外名称不变，但内部逐步调用这些 typed API。这样现有 React UI 与未来 egui UI 可以共用同一后端服务。
 
 ## Typed event bus
 
-当前后端向前端发送大量字符串事件，例如：
+当前分支已经新增 `src-tauri/src/app_event.rs`，用 `AppEvent` / `AppEventBus` 承载 typed backend events；迁移期继续保留现有字符串式 Tauri events，确保 React UI 可运行。当前后端向前端发送的大量字符串事件包括：
 
 - `terminal-output-{id}`
 - `cwd-changed-{id}`
@@ -95,7 +101,10 @@ pub enum AppEvent {
     SessionsChanged,
     Transfer(TransferEvent),
     OtpRequest(OtpRequest),
+    SshAuthRequest(SshAuthRequest),
+    HostKeyVerifyRequest(HostKeyVerifyRequest),
     CloudSyncStatusChanged(CloudSyncStatus),
+    CloudSyncHistoryChanged(CloudSyncHistory),
     CloudSyncConflict(CloudConflict),
 }
 ```
@@ -115,7 +124,7 @@ egui update loop drain events
 WorkspaceState / PanelState / TerminalModel
 ```
 
-迁移期间可以双发：同时发 Tauri event 和 `AppEventBus` event，直到 React UI 下线。
+当前 typed event bus 已覆盖 terminal output、CWD changed、session closed、sessions changed、transfer、OTP、SSH auth、host-key verify、cloud-sync status/history/conflict 等事件。迁移期间必须继续双发：同时发 Tauri event 和 `AppEventBus` event，直到 React UI 下线。
 
 ## egui App shell
 
@@ -275,51 +284,44 @@ pub struct Action {
 
 ## 迁移阶段
 
-### Phase 0：后端解耦
+### Phase 0：facade 与 event bus 基础设施（已完成第一批）
 
-- 新增 `NyatermCore` facade。
-- 新增 `AppEvent` / `AppEventBus`。
-- Tauri command 层委托给 facade。
-- 后端事件双发到 Tauri event 和 typed event bus。
+- 已新增 `NyatermCore` facade，并开始把 session command 委托到 facade。
+- 已新增 `AppEvent` / `AppEventBus`。
+- 已对 terminal、session、transfer、auth、host-key verify、cloud-sync 等事件建立 typed event。
+- 继续要求后端事件双发到 Tauri event 和 typed event bus。
 - 保持当前 React/Tauri UI 完全可用。
 
-### Phase 1：egui 原生壳
+### Phase 1：补齐 typed app services
+
+- 将 settings、saved connections、quick commands、SFTP、cloud sync、backup、AI history/audit 和 agent approval 继续收敛为 typed services。
+- 为 session 创建链路补齐 local / SSH / Telnet / Serial typed API。
+- 把迁移后的 Tauri commands 保持为薄 bridge，避免 React UI 与 egui UI 分叉业务逻辑。
+- 对敏感配置继续复用现有 crypto/storage helpers。
+
+### Phase 2：egui / eframe binary spike
 
 - 新增 eframe binary。
 - 启动 Tokio runtime。
-- 初始化 `NyatermCore`。
+- 初始化 `NyatermCore` 与 `AppEventBus` receiver。
 - 渲染空布局：top bar、activity bar、terminal area、status bar。
-- 支持创建 local terminal session。
+- 验证 local terminal session 的 create/list/write/resize/close 闭环。
 
-### Phase 2：终端工作区
+### Phase 3：terminal adapter spike
 
-- 实现 `nyaterm-terminal` 最小模型。
-- 渲染 terminal rows。
-- 支持输入、resize、scrollback、copy/paste。
-- 实现 tabs 和 split panes。
-- 恢复 `ui.open_tabs`。
+- 基于 `egui_term` / `alacritty_terminal` 实现 `nyaterm-terminal` 适配层。
+- 验证多 session / 多 tab / split panes 下的 terminal widget 生命周期。
+- 支持输入、paste、resize、scrollback、selection、copy/paste、theme/font mapping 和 hyperlink 基础能力。
+- 针对大输出、宽字符、IME、alternate screen 和高频 resize 做性能与兼容性压测。
 
-### Phase 3：功能面板
+### Phase 4：workspace / panel 迁移
 
-- saved connections；
-- quick commands；
-- command history；
-- SFTP file explorer；
-- transfer panel；
-- settings dialog。
+- 将 `workspaceTabs.ts` 与 `tabWindows.ts` 概念迁移为 Rust `WorkspaceState`，保持 `ui.open_tabs` JSON 兼容。
+- 迁移 saved connections、quick commands、command history、SFTP file explorer、transfer panel 和 settings dialog。
+- 迁移 OTP / SSH auth / host key verify dialogs、ZMODEM、file drop、AI assistant、cloud sync、backup / import、updater 等高级交互。
+- 评估多窗口或 modal viewport 替代方案。
 
-### Phase 4：高级交互
-
-- OTP / SSH auth / host key verify dialogs；
-- ZMODEM；
-- file drop；
-- AI assistant；
-- cloud sync；
-- backup / import；
-- updater；
-- 多窗口或 modal viewport 替代方案。
-
-### Phase 5：默认切换
+### Phase 5：默认切换与 WebView 清理
 
 - egui binary 成为默认桌面产物。
 - release pipeline 切换到 Rust native build。

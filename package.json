@@ -24,7 +24,7 @@
     "tauri": "tauri",
     "lint": "node scripts/check-no-console.mjs && biome check src/",
     "format": "biome check --write src/",
-    "format:check": "biome check --check src/",
+    "format:check": "biome check src/",
     "fmt": "pnpm fmt:frontend && pnpm fmt:rust",
     "fmt:frontend": "prettier --write .",
     "fmt:rust": "cargo fmt --manifest-path src-tauri/Cargo.toml",
