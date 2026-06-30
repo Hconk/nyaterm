@@ -13,16 +13,11 @@ fn schedule_cloud_sync_notify(app: tauri::AppHandle) {
 }
 
 #[tauri::command]
-pub fn get_saved_connections(app: tauri::AppHandle) -> AppResult<Vec<SavedConnection>> {
-    let cfg = config::load_config(&app)?;
-    let mut connections = cfg.connections;
-    for conn in &mut connections {
-        if let Some(ref mut auth) = conn.auth {
-            auth.has_password = auth.password.is_some();
-            auth.password = None;
-        }
-    }
-    Ok(connections)
+pub fn get_saved_connections(
+    app: tauri::AppHandle,
+    core: tauri::State<'_, NyatermCore>,
+) -> AppResult<Vec<SavedConnection>> {
+    core.get_saved_connections(&app)
 }
 
 #[tauri::command]
@@ -510,26 +505,20 @@ pub fn delete_ssh_key(app: tauri::AppHandle, id: String) -> AppResult<()> {
 }
 
 #[tauri::command]
-pub fn get_groups(app: tauri::AppHandle) -> AppResult<Vec<Group>> {
-    let cfg = config::load_config(&app)?;
-    Ok(cfg.groups)
+pub fn get_groups(
+    app: tauri::AppHandle,
+    core: tauri::State<'_, NyatermCore>,
+) -> AppResult<Vec<Group>> {
+    core.get_groups(&app)
 }
 
 #[tauri::command]
-pub fn save_group(app: tauri::AppHandle, mut group: Group) -> AppResult<String> {
-    let mut cfg = config::load_config(&app)?;
-
-    if group.id.is_empty() {
-        group.id = uuid::Uuid::new_v4().to_string();
-    }
-    let target_id = group.id.clone();
-
-    if let Some(existing) = cfg.groups.iter_mut().find(|g| g.id == target_id) {
-        *existing = group;
-    } else {
-        cfg.groups.push(group);
-    }
-    config::save_config(&app, &cfg)?;
+pub fn save_group(
+    app: tauri::AppHandle,
+    core: tauri::State<'_, NyatermCore>,
+    group: Group,
+) -> AppResult<String> {
+    let target_id = core.save_group(&app, group)?;
     let _ = app.emit("connections-changed", ());
     schedule_cloud_sync_notify(app.clone());
     Ok(target_id)

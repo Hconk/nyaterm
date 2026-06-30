@@ -9,8 +9,8 @@ use std::sync::Arc;
 
 use crate::app_event::AppEventBus;
 use crate::config::{
-    self, AppSettings, CloudSyncHistoryEntry, CloudSyncStatus, QuickCommand, QuickCommandCategory,
-    QuickCommandsConfig,
+    self, AppSettings, CloudSyncHistoryEntry, CloudSyncStatus, Group, QuickCommand,
+    QuickCommandCategory, QuickCommandsConfig, SavedConnection,
 };
 use crate::core::ai::AgentApprovalManager;
 use crate::core::sftp::TransferDuplicateManager;
@@ -133,6 +133,44 @@ impl NyatermCore {
         self.session_manager
             .send_command(session_id, SessionCommand::ZmodemCancel)
             .await
+    }
+
+    /// Load saved connections with secrets stripped for UI consumption.
+    pub fn get_saved_connections(&self, app: &tauri::AppHandle) -> AppResult<Vec<SavedConnection>> {
+        let cfg = config::load_config(app)?;
+        let mut connections = cfg.connections;
+        for connection in &mut connections {
+            if let Some(ref mut auth) = connection.auth {
+                auth.has_password = auth.password.is_some();
+                auth.password = None;
+            }
+        }
+        Ok(connections)
+    }
+
+    /// Load saved connection groups.
+    pub fn get_groups(&self, app: &tauri::AppHandle) -> AppResult<Vec<Group>> {
+        let cfg = config::load_config(app)?;
+        Ok(cfg.groups)
+    }
+
+    /// Insert or update a saved connection group.
+    pub fn save_group(&self, app: &tauri::AppHandle, mut group: Group) -> AppResult<String> {
+        let mut cfg = config::load_config(app)?;
+
+        if group.id.is_empty() {
+            group.id = uuid::Uuid::new_v4().to_string();
+        }
+        let target_id = group.id.clone();
+
+        if let Some(existing) = cfg.groups.iter_mut().find(|item| item.id == target_id) {
+            *existing = group;
+        } else {
+            cfg.groups.push(group);
+        }
+
+        config::save_config(app, &cfg)?;
+        Ok(target_id)
     }
 
     /// Load app settings with sensitive values masked for UI editing.
