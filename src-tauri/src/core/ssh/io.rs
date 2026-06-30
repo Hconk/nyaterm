@@ -737,7 +737,7 @@ pub(super) async fn ssh_io_loop(
         remote_exit_signal = remote_exit_signal.as_deref(),
         "SSH session closed"
     );
-    emit_session_closed(&app, session_id);
+    emit_session_closed(&app, &session_id);
 }
 
 async fn handle_zmodem_actions(
