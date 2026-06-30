@@ -6,7 +6,7 @@ use crate::utils::crypto;
 use std::path::Path;
 use tauri::Emitter;
 
-fn schedule_cloud_sync_notify(app: tauri::AppHandle) {
+pub(crate) fn schedule_cloud_sync_notify(app: tauri::AppHandle) {
     tauri::async_runtime::spawn(async move {
         crate::core::cloud_sync::notify_config_changed(&app).await;
     });
@@ -23,6 +23,17 @@ pub fn get_saved_connections(
 #[tauri::command]
 pub fn save_connection(
     app: tauri::AppHandle,
+    core: tauri::State<'_, NyatermCore>,
+    connection: SavedConnection,
+) -> AppResult<String> {
+    let target_id = core.save_connection(&app, connection)?;
+    let _ = app.emit("connections-changed", ());
+    schedule_cloud_sync_notify(app.clone());
+    Ok(target_id)
+}
+
+pub(crate) fn save_connection_impl(
+    app: &tauri::AppHandle,
     mut connection: SavedConnection,
 ) -> AppResult<String> {
     let mut cfg = config::load_config(&app)?;
@@ -66,12 +77,10 @@ pub fn save_connection(
         cfg.connections.push(connection);
     }
     config::save_config(&app, &cfg)?;
-    let _ = app.emit("connections-changed", ());
-    schedule_cloud_sync_notify(app.clone());
     Ok(target_id)
 }
 
-fn validate_local_terminal_config(connection: &SavedConnection) -> AppResult<()> {
+pub(crate) fn validate_local_terminal_config(connection: &SavedConnection) -> AppResult<()> {
     let config::ConnectionType::LocalTerminal {
         shell_path,
         shell_args,
@@ -120,7 +129,7 @@ fn trim_wrapping_quotes(value: &str) -> &str {
     }
 }
 
-fn validate_proxy_jump_config(
+pub(crate) fn validate_proxy_jump_config(
     connection: &SavedConnection,
     existing_connections: &[SavedConnection],
 ) -> AppResult<()> {
@@ -384,10 +393,12 @@ mod tests {
 }
 
 #[tauri::command]
-pub fn delete_connection(app: tauri::AppHandle, id: String) -> AppResult<()> {
-    let mut cfg = config::load_config(&app)?;
-    cfg.connections.retain(|c| c.id != id);
-    config::save_config(&app, &cfg)?;
+pub fn delete_connection(
+    app: tauri::AppHandle,
+    core: tauri::State<'_, NyatermCore>,
+    id: String,
+) -> AppResult<()> {
+    core.delete_connection(&app, &id)?;
     let _ = app.emit("connections-changed", ());
     schedule_cloud_sync_notify(app.clone());
     Ok(())
@@ -396,14 +407,10 @@ pub fn delete_connection(app: tauri::AppHandle, id: String) -> AppResult<()> {
 #[tauri::command]
 pub fn get_connection_password_value(
     app: tauri::AppHandle,
+    core: tauri::State<'_, NyatermCore>,
     id: String,
 ) -> AppResult<Option<String>> {
-    let connection = config::load_connection_by_id(&app, &id)?;
-    let Some(auth) = connection.auth else {
-        return Ok(None);
-    };
-
-    crypto::decrypt_optional(&auth.password)
+    core.get_connection_password_value(&app, &id)
 }
 
 #[derive(serde::Deserialize)]
@@ -415,21 +422,11 @@ pub struct SortOrderUpdate {
 #[tauri::command]
 pub fn reorder_items(
     app: tauri::AppHandle,
+    core: tauri::State<'_, NyatermCore>,
     connections: Vec<SortOrderUpdate>,
     groups: Vec<SortOrderUpdate>,
 ) -> AppResult<()> {
-    let mut cfg = config::load_config(&app)?;
-    for update in &connections {
-        if let Some(conn) = cfg.connections.iter_mut().find(|c| c.id == update.id) {
-            conn.sort_order = update.sort_order;
-        }
-    }
-    for update in &groups {
-        if let Some(grp) = cfg.groups.iter_mut().find(|g| g.id == update.id) {
-            grp.sort_order = update.sort_order;
-        }
-    }
-    config::save_config(&app, &cfg)?;
+    core.reorder_items(&app, &connections, &groups)?;
     let _ = app.emit("connections-changed", ());
     schedule_cloud_sync_notify(app.clone());
     Ok(())
@@ -524,7 +521,7 @@ pub fn save_group(
     Ok(target_id)
 }
 
-fn delete_group_from_config(cfg: &mut config::AppConfig, id: &str) {
+pub(crate) fn delete_group_from_config(cfg: &mut config::AppConfig, id: &str) {
     // Collect the target group and all descendant groups.
     let mut ids_to_remove = vec![id.to_string()];
     let mut i = 0;
@@ -549,21 +546,23 @@ fn delete_group_from_config(cfg: &mut config::AppConfig, id: &str) {
 }
 
 #[tauri::command]
-pub fn delete_group(app: tauri::AppHandle, id: String) -> AppResult<()> {
-    let mut cfg = config::load_config(&app)?;
-    delete_group_from_config(&mut cfg, &id);
-    config::save_config(&app, &cfg)?;
+pub fn delete_group(
+    app: tauri::AppHandle,
+    core: tauri::State<'_, NyatermCore>,
+    id: String,
+) -> AppResult<()> {
+    core.delete_group(&app, &id)?;
     let _ = app.emit("connections-changed", ());
     schedule_cloud_sync_notify(app.clone());
     Ok(())
 }
 
 #[tauri::command]
-pub fn clear_all_connections(app: tauri::AppHandle) -> AppResult<()> {
-    let mut cfg = config::load_config(&app)?;
-    cfg.connections.clear();
-    cfg.groups.clear();
-    config::save_config(&app, &cfg)?;
+pub fn clear_all_connections(
+    app: tauri::AppHandle,
+    core: tauri::State<'_, NyatermCore>,
+) -> AppResult<()> {
+    core.clear_all_connections(&app)?;
     let _ = app.emit("connections-changed", ());
     schedule_cloud_sync_notify(app.clone());
     Ok(())

@@ -15,14 +15,15 @@ use crate::config::{
 use crate::core::ai::AgentApprovalManager;
 use crate::core::sftp::TransferDuplicateManager;
 use crate::core::ssh::{
-    HostKeyVerifyManager, PendingAuthManager, PendingSshAuthManager, TunnelManager,
+    self, HostKeyVerifyManager, PendingAuthManager, PendingSshAuthManager, TunnelManager,
 };
 use crate::core::{
-    CloudSyncManager, QuickCommandsImportResult, QuickCommandsImportSource, QuickCommandsStore,
-    RecordingManager, SessionCommand, SessionInfo, SessionManager,
+    self, CloudSyncManager, QuickCommandsImportResult, QuickCommandsImportSource,
+    QuickCommandsStore, RecordingManager, SessionCommand, SessionInfo, SessionManager,
 };
 use crate::error::{AppError, AppResult};
 use crate::observability::{self, StructuredLog, StructuredLogLevel};
+use crate::utils::crypto;
 use crate::utils::fuzzy::FuzzyResult;
 use tauri::Manager;
 
@@ -58,6 +59,308 @@ impl NyatermCore {
             transfer_duplicate_manager: Arc::new(TransferDuplicateManager::new()),
             event_bus: AppEventBus::new(),
         }
+    }
+
+    /// Create an SSH session from a saved connection.
+    pub async fn create_ssh_session(
+        &self,
+        app: tauri::AppHandle,
+        connection_id: String,
+        window_label: Option<String>,
+        create_request_id: Option<String>,
+        startup_command: Option<crate::cmd::session::StartupCommandPayload>,
+    ) -> AppResult<String> {
+        let ssh_config = ssh::load_saved_ssh_config(&app, &connection_id)?;
+        let pending_creation = self
+            .session_manager
+            .begin_session_creation(create_request_id)
+            .await;
+        let (guard, cancel_rx) = match pending_creation {
+            Some((guard, cancel_rx)) => (Some(guard), Some(cancel_rx)),
+            None => (None, None),
+        };
+
+        let session_id = ssh::create_ssh_session(
+            app.clone(),
+            self.session_manager.clone(),
+            ssh_config,
+            Some(connection_id.clone()),
+            window_label,
+            cancel_rx,
+            startup_command.map(|command| ssh::SshStartupCommand {
+                command: command.command,
+                delay_ms: command.delay_ms,
+            }),
+        )
+        .await?;
+        drop(guard);
+        if let Err(error) = crate::storage::mark_connection_used(&connection_id) {
+            tracing::warn!(connection_id, %error, "Failed to mark connection as recently used");
+        }
+        crate::cmd::session::maybe_start_auto_recording(
+            &app,
+            self.session_manager.as_ref(),
+            self.recording_manager.clone(),
+            &session_id,
+        )
+        .await;
+        Ok(session_id)
+    }
+
+    /// Create a multiplexed SSH session from an existing SSH transport.
+    pub async fn create_multiplexed_ssh_session(
+        &self,
+        app: tauri::AppHandle,
+        source_session_id: &str,
+        startup_command: Option<crate::cmd::session::StartupCommandPayload>,
+    ) -> AppResult<String> {
+        let session_id = ssh::create_multiplexed_ssh_session(
+            app.clone(),
+            self.session_manager.clone(),
+            source_session_id,
+            startup_command.map(|command| ssh::SshStartupCommand {
+                command: command.command,
+                delay_ms: command.delay_ms,
+            }),
+        )
+        .await?;
+        crate::cmd::session::maybe_start_auto_recording(
+            &app,
+            self.session_manager.as_ref(),
+            self.recording_manager.clone(),
+            &session_id,
+        )
+        .await;
+        Ok(session_id)
+    }
+
+    /// Create a local PTY-backed session.
+    pub async fn create_local_session(
+        &self,
+        app: tauri::AppHandle,
+        connection_id: Option<String>,
+        window_label: Option<String>,
+        create_request_id: Option<String>,
+    ) -> AppResult<String> {
+        let pending_creation = self
+            .session_manager
+            .begin_session_creation(create_request_id)
+            .await;
+        let (guard, _cancel_rx) = match pending_creation {
+            Some((guard, cancel_rx)) => (Some(guard), Some(cancel_rx)),
+            None => (None, None),
+        };
+        let config = if let Some(ref connection_id) = connection_id {
+            let connection = config::load_connection_by_id(&app, connection_id)?;
+            match connection.config {
+                config::ConnectionType::LocalTerminal {
+                    shell_path,
+                    shell_args,
+                    working_dir,
+                    ..
+                } => Some(core::LocalSessionConfig {
+                    shell_path,
+                    shell_args,
+                    working_dir,
+                    name: connection.name,
+                }),
+                _ => None,
+            }
+        } else {
+            None
+        };
+        let session_id = core::create_local_session(
+            app.clone(),
+            self.session_manager.clone(),
+            config,
+            window_label,
+        )
+        .await?;
+        drop(guard);
+        if let Some(connection_id) = connection_id {
+            if let Err(error) = crate::storage::mark_connection_used(&connection_id) {
+                tracing::warn!(connection_id, %error, "Failed to mark connection as recently used");
+            }
+        }
+        crate::cmd::session::maybe_start_auto_recording(
+            &app,
+            self.session_manager.as_ref(),
+            self.recording_manager.clone(),
+            &session_id,
+        )
+        .await;
+        Ok(session_id)
+    }
+
+    /// Create a Telnet session from either a saved connection or ad-hoc details.
+    pub async fn create_telnet_session(
+        &self,
+        app: tauri::AppHandle,
+        connection_id: Option<String>,
+        host: Option<String>,
+        port: Option<u16>,
+        name: Option<String>,
+        window_label: Option<String>,
+        create_request_id: Option<String>,
+    ) -> AppResult<String> {
+        let pending_creation = self
+            .session_manager
+            .begin_session_creation(create_request_id)
+            .await;
+        let (guard, _cancel_rx) = match pending_creation {
+            Some((guard, cancel_rx)) => (Some(guard), Some(cancel_rx)),
+            None => (None, None),
+        };
+        let cfg = if let Some(ref connection_id) = connection_id {
+            let connection = config::load_connection_by_id(&app, connection_id)?;
+            match connection.config {
+                config::ConnectionType::Telnet {
+                    host: ref configured_host,
+                    port: configured_port,
+                    backspace_mode,
+                    raw_tcp_cli,
+                    enter_mode,
+                    local_echo,
+                    local_line_edit,
+                    force_character_at_a_time,
+                    send_naws,
+                    send_sga,
+                    ..
+                } => core::TelnetSessionConfig {
+                    host: configured_host.clone(),
+                    port: configured_port,
+                    name: connection.name.clone(),
+                    backspace_mode,
+                    raw_tcp_cli,
+                    enter_mode: core::TelnetEnterMode::from_config_value(&enter_mode),
+                    local_echo,
+                    local_line_edit,
+                    force_character_at_a_time,
+                    send_naws,
+                    send_sga,
+                },
+                _ => {
+                    return Err(AppError::Config(
+                        "Connection is not a Telnet connection".to_string(),
+                    ));
+                }
+            }
+        } else {
+            core::TelnetSessionConfig {
+                host: host.ok_or_else(|| AppError::Config("host is required".to_string()))?,
+                port: port.unwrap_or(23),
+                name: name.unwrap_or_else(|| "Telnet".to_string()),
+                ..Default::default()
+            }
+        };
+        let marked_connection_id = connection_id.clone();
+        let session_id = core::create_telnet_session(
+            app.clone(),
+            self.session_manager.clone(),
+            cfg,
+            connection_id,
+            window_label,
+        )
+        .await?;
+        drop(guard);
+        if let Some(connection_id) = marked_connection_id {
+            if let Err(error) = crate::storage::mark_connection_used(&connection_id) {
+                tracing::warn!(connection_id, %error, "Failed to mark connection as recently used");
+            }
+        }
+        crate::cmd::session::maybe_start_auto_recording(
+            &app,
+            self.session_manager.as_ref(),
+            self.recording_manager.clone(),
+            &session_id,
+        )
+        .await;
+        Ok(session_id)
+    }
+
+    /// Create a serial session from either a saved connection or ad-hoc port settings.
+    pub async fn create_serial_session(
+        &self,
+        app: tauri::AppHandle,
+        connection_id: Option<String>,
+        port_name: Option<String>,
+        baud_rate: Option<u32>,
+        data_bits: Option<u8>,
+        parity: Option<String>,
+        stop_bits: Option<String>,
+        name: Option<String>,
+        window_label: Option<String>,
+        create_request_id: Option<String>,
+    ) -> AppResult<String> {
+        let pending_creation = self
+            .session_manager
+            .begin_session_creation(create_request_id)
+            .await;
+        let (guard, _cancel_rx) = match pending_creation {
+            Some((guard, cancel_rx)) => (Some(guard), Some(cancel_rx)),
+            None => (None, None),
+        };
+        let cfg = if let Some(ref connection_id) = connection_id {
+            let connection = config::load_connection_by_id(&app, connection_id)?;
+            match connection.config {
+                config::ConnectionType::Serial {
+                    port_name,
+                    baud_rate,
+                    data_bits,
+                    parity,
+                    stop_bits,
+                    backspace_mode,
+                    ..
+                } => core::SerialConfig {
+                    port_name,
+                    baud_rate,
+                    data_bits,
+                    parity,
+                    stop_bits,
+                    name: connection.name,
+                    backspace_mode,
+                },
+                _ => {
+                    return Err(AppError::Config(
+                        "Connection is not a Serial connection".to_string(),
+                    ));
+                }
+            }
+        } else {
+            core::SerialConfig {
+                port_name: port_name
+                    .ok_or_else(|| AppError::Config("port_name is required".to_string()))?,
+                baud_rate: baud_rate.unwrap_or(115_200),
+                data_bits: data_bits.unwrap_or(8),
+                parity: parity.unwrap_or_else(|| "none".to_string()),
+                stop_bits: stop_bits.unwrap_or_else(|| "1".to_string()),
+                name: name.unwrap_or_else(|| "Serial".to_string()),
+                backspace_mode: "ctrl_h".to_string(),
+            }
+        };
+        let marked_connection_id = connection_id.clone();
+        let session_id = core::create_serial_session(
+            app.clone(),
+            self.session_manager.clone(),
+            cfg,
+            connection_id,
+            window_label,
+        )
+        .await?;
+        drop(guard);
+        if let Some(connection_id) = marked_connection_id {
+            if let Err(error) = crate::storage::mark_connection_used(&connection_id) {
+                tracing::warn!(connection_id, %error, "Failed to mark connection as recently used");
+            }
+        }
+        crate::cmd::session::maybe_start_auto_recording(
+            &app,
+            self.session_manager.as_ref(),
+            self.recording_manager.clone(),
+            &session_id,
+        )
+        .await;
+        Ok(session_id)
     }
 
     /// List active sessions for UI frontends.
@@ -171,6 +474,76 @@ impl NyatermCore {
 
         config::save_config(app, &cfg)?;
         Ok(target_id)
+    }
+
+    /// Insert or update a saved connection while preserving encrypted secrets omitted by the UI.
+    pub fn save_connection(
+        &self,
+        app: &tauri::AppHandle,
+        connection: SavedConnection,
+    ) -> AppResult<String> {
+        crate::cmd::connection::save_connection_impl(app, connection)
+    }
+
+    /// Delete a saved connection by id.
+    pub fn delete_connection(&self, app: &tauri::AppHandle, id: &str) -> AppResult<()> {
+        let mut cfg = config::load_config(app)?;
+        cfg.connections.retain(|connection| connection.id != id);
+        config::save_config(app, &cfg)
+    }
+
+    /// Update persisted sort order for saved connections and groups.
+    pub fn reorder_items(
+        &self,
+        app: &tauri::AppHandle,
+        connections: &[crate::cmd::connection::SortOrderUpdate],
+        groups: &[crate::cmd::connection::SortOrderUpdate],
+    ) -> AppResult<()> {
+        let mut cfg = config::load_config(app)?;
+        for update in connections {
+            if let Some(connection) = cfg
+                .connections
+                .iter_mut()
+                .find(|connection| connection.id == update.id)
+            {
+                connection.sort_order = update.sort_order;
+            }
+        }
+        for update in groups {
+            if let Some(group) = cfg.groups.iter_mut().find(|group| group.id == update.id) {
+                group.sort_order = update.sort_order;
+            }
+        }
+        config::save_config(app, &cfg)
+    }
+
+    /// Delete a group, all descendant groups, and contained connections.
+    pub fn delete_group(&self, app: &tauri::AppHandle, id: &str) -> AppResult<()> {
+        let mut cfg = config::load_config(app)?;
+        crate::cmd::connection::delete_group_from_config(&mut cfg, id);
+        config::save_config(app, &cfg)
+    }
+
+    /// Remove all saved connections and groups.
+    pub fn clear_all_connections(&self, app: &tauri::AppHandle) -> AppResult<()> {
+        let mut cfg = config::load_config(app)?;
+        cfg.connections.clear();
+        cfg.groups.clear();
+        config::save_config(app, &cfg)
+    }
+
+    /// Return the decrypted password stored directly on a saved connection.
+    pub fn get_connection_password_value(
+        &self,
+        app: &tauri::AppHandle,
+        id: &str,
+    ) -> AppResult<Option<String>> {
+        let connection = config::load_connection_by_id(app, id)?;
+        let Some(auth) = connection.auth else {
+            return Ok(None);
+        };
+
+        crypto::decrypt_optional(&auth.password)
     }
 
     /// Load app settings with sensitive values masked for UI editing.
