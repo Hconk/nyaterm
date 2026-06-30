@@ -8,6 +8,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::app_event::AppEventBus;
+use crate::config::{CloudSyncHistoryEntry, CloudSyncStatus};
 use crate::core::ai::AgentApprovalManager;
 use crate::core::sftp::TransferDuplicateManager;
 use crate::core::ssh::{
@@ -128,6 +129,38 @@ impl NyatermCore {
         self.session_manager
             .send_command(session_id, SessionCommand::ZmodemCancel)
             .await
+    }
+
+    /// Verify the configured cloud-sync backend is reachable.
+    pub async fn test_cloud_sync_connection(&self) -> AppResult<()> {
+        self.cloud_sync_manager.test_connection().await
+    }
+
+    /// Return the latest cloud-sync status snapshot.
+    pub async fn get_cloud_sync_status(&self) -> AppResult<CloudSyncStatus> {
+        Ok(self.cloud_sync_manager.get_status().await)
+    }
+
+    /// Push local configuration to the configured cloud-sync backend.
+    pub async fn sync_push_now(&self) -> AppResult<()> {
+        self.cloud_sync_manager.sync_push_now("manual_push").await
+    }
+
+    /// Pull remote configuration from the configured cloud-sync backend.
+    pub async fn sync_pull_now(&self) -> AppResult<()> {
+        self.cloud_sync_manager.sync_pull_now("manual_pull").await
+    }
+
+    /// Resolve the currently pending cloud-sync conflict.
+    pub async fn resolve_cloud_sync_conflict(&self, action: &str) -> AppResult<()> {
+        self.cloud_sync_manager
+            .resolve_cloud_sync_conflict(action)
+            .await
+    }
+
+    /// List persisted cloud-sync history entries.
+    pub async fn list_cloud_sync_history(&self) -> AppResult<Vec<CloudSyncHistoryEntry>> {
+        Ok(self.cloud_sync_manager.list_history().await)
     }
 
     /// Request a session close and clean up temporary files associated with it.

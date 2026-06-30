@@ -73,7 +73,8 @@ pub struct NyatermCore {
 - saved connections / groups API：`get_saved_connections`、`save_connection`、分组增删改；
 - quick commands API；
 - SFTP / transfer API；
-- cloud sync / backup API；
+- cloud sync API（status/history/test/push/pull/conflict resolution 已收敛到 `NyatermCore`）；
+- backup API；
 - AI history / audit / agent approval API。
 
 Tauri commands 保持对外名称不变，但内部逐步调用这些 typed API。这样现有 React UI 与未来 egui UI 可以共用同一后端服务。
@@ -294,7 +295,7 @@ pub struct Action {
 
 ### Phase 1：补齐 typed app services
 
-- 将 settings、saved connections、quick commands、SFTP、cloud sync、backup、AI history/audit 和 agent approval 继续收敛为 typed services。
+- 将 settings、saved connections、quick commands、SFTP、backup、AI history/audit 和 agent approval 继续收敛为 typed services；cloud sync 的 status/history/test/push/pull/conflict resolution 已先行接入 `NyatermCore`。
 - 为 session 创建链路补齐 local / SSH / Telnet / Serial typed API。
 - 把迁移后的 Tauri commands 保持为薄 bridge，避免 React UI 与 egui UI 分叉业务逻辑。
 - 对敏感配置继续复用现有 crypto/storage helpers。
