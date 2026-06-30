@@ -19,6 +19,7 @@ use crate::core::{
 };
 use crate::error::{AppError, AppResult};
 use crate::observability::{self, StructuredLog, StructuredLogLevel};
+use crate::utils::fuzzy::FuzzyResult;
 use tauri::Manager;
 
 /// Shared backend managers and typed event publisher for UI frontends.
@@ -128,6 +129,49 @@ impl NyatermCore {
         self.session_manager
             .send_command(session_id, SessionCommand::ZmodemCancel)
             .await
+    }
+
+    /// Add a command to persisted command history.
+    pub async fn add_command_history(&self, session_id: &str, command: String) -> AppResult<()> {
+        self.session_manager.add_command(session_id, command).await;
+        Ok(())
+    }
+
+    /// Register a submitted command so shell integration can confirm it.
+    pub async fn register_command_submission(
+        &self,
+        session_id: &str,
+        command: String,
+    ) -> AppResult<()> {
+        self.session_manager
+            .register_command_submission(session_id, command)
+            .await;
+        Ok(())
+    }
+
+    /// Return the complete command history list.
+    pub async fn get_command_history(&self) -> AppResult<Vec<String>> {
+        Ok(self.session_manager.get_all_history().await)
+    }
+
+    /// Delete one command from command history.
+    pub async fn delete_command_history(&self, command: String) -> AppResult<()> {
+        self.session_manager.delete_history_command(command).await;
+        Ok(())
+    }
+
+    /// Fuzzy-search command history.
+    pub async fn fuzzy_search_history(
+        &self,
+        pattern: &str,
+        limit: usize,
+        min_command_length: Option<usize>,
+        max_command_length: Option<usize>,
+    ) -> AppResult<Vec<FuzzyResult>> {
+        Ok(self
+            .session_manager
+            .fuzzy_search(pattern, limit, min_command_length, max_command_length)
+            .await)
     }
 
     /// Request a session close and clean up temporary files associated with it.
