@@ -1,4 +1,5 @@
 use super::client::{SshAuth, SshConfig, SshHandler, SshPostLoginConfig};
+use crate::app_event::{emit_otp_request, emit_ssh_auth_request};
 use crate::error::{AppError, AppResult};
 use crate::observability::{self, StructuredLog, StructuredLogLevel};
 use russh::client::{self, KeyboardInteractiveAuthResponse};
@@ -851,7 +852,7 @@ async fn request_runtime_auth_response(
         })),
         None,
     );
-    let _ = app.emit("ssh-auth-request", &payload);
+    emit_ssh_auth_request(app, &payload);
 
     let response = match rx.await {
         Ok(Some(response)) => response,
@@ -1992,7 +1993,7 @@ async fn finish_keyboard_interactive(
                         })),
                         None,
                     );
-                    let _ = app.emit("otp-request", &payload);
+                    emit_otp_request(app, &payload);
 
                     let responses = match rx.await {
                         Ok(Some(responses)) => responses,

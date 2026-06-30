@@ -7,6 +7,7 @@ use super::zmodem::{
     ZmodemAction, ZmodemDetectResult, ZmodemDetector, ZmodemDirection, ZmodemEvent, ZmodemTransfer,
     start_zmodem_transfer,
 };
+use crate::app_event::emit_session_closed;
 use crate::config::AiExecutionProfile;
 use crate::core::capture::OutputCaptureProcessor;
 use crate::core::input::remap_del_to_bs;
@@ -649,7 +650,7 @@ async fn telnet_session_task(
                 &format!("session-error-{}", session_id),
                 format!("Connection failed: {}", e),
             );
-            let _ = app.emit(&format!("session-closed-{}", session_id), ());
+            emit_session_closed(&app, &session_id);
             manager.remove_session(&session_id).await;
             return;
         }
@@ -657,7 +658,6 @@ async fn telnet_session_task(
 
     let (mut reader, mut writer) = stream.into_split();
     let output_event = format!("terminal-output-{}", session_id);
-    let closed_event = format!("session-closed-{}", session_id);
     let recording_mgr: Option<Arc<RecordingManager>> = app
         .try_state::<Arc<RecordingManager>>()
         .map(|state| state.inner().clone());
@@ -996,5 +996,5 @@ async fn telnet_session_task(
         recorder.cleanup_session(&session_id);
     }
     manager.remove_session(&session_id).await;
-    let _ = app.emit(&closed_event, ());
+    emit_session_closed(&app, &session_id);
 }

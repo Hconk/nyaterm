@@ -3,6 +3,8 @@
 //! Tauri app entry point: state construction, plugin registration, and command routing.
 
 mod app;
+mod app_core;
+mod app_event;
 mod cmd;
 mod config;
 mod core;
@@ -15,31 +17,26 @@ mod tray;
 mod utils;
 mod window_state;
 
-use std::sync::Arc;
-
+use crate::app_core::NyatermCore;
 use crate::cmd::app::AppLockState;
-use crate::core::ai::AgentApprovalManager;
-use crate::core::sftp::TransferDuplicateManager;
-use crate::core::ssh::{
-    HostKeyVerifyManager, PendingAuthManager, PendingSshAuthManager, TunnelManager,
-};
-use crate::core::{CloudSyncManager, QuickCommandsStore, RecordingManager, SessionManager};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let runtime = runtime::resolve().expect("failed to resolve runtime paths");
     runtime::prepare_webview_environment(&runtime);
 
-    let session_manager = Arc::new(SessionManager::new());
-    let tunnel_manager = Arc::new(TunnelManager::new());
-    let recording_manager = Arc::new(RecordingManager::new());
-    let pending_auth_manager = Arc::new(PendingAuthManager::new());
-    let pending_ssh_auth_manager = Arc::new(PendingSshAuthManager::new());
-    let host_key_verify_manager = Arc::new(HostKeyVerifyManager::new());
-    let quick_commands_store = Arc::new(QuickCommandsStore::new());
-    let cloud_sync_manager = Arc::new(CloudSyncManager::new());
-    let agent_approval_manager = Arc::new(AgentApprovalManager::new());
-    let transfer_duplicate_manager = Arc::new(TransferDuplicateManager::new());
+    let core = NyatermCore::new();
+    let session_manager = core.session_manager.clone();
+    let tunnel_manager = core.tunnel_manager.clone();
+    let recording_manager = core.recording_manager.clone();
+    let pending_auth_manager = core.pending_auth_manager.clone();
+    let pending_ssh_auth_manager = core.pending_ssh_auth_manager.clone();
+    let host_key_verify_manager = core.host_key_verify_manager.clone();
+    let quick_commands_store = core.quick_commands_store.clone();
+    let cloud_sync_manager = core.cloud_sync_manager.clone();
+    let agent_approval_manager = core.agent_approval_manager.clone();
+    let transfer_duplicate_manager = core.transfer_duplicate_manager.clone();
+    let event_bus = core.event_bus.clone();
     let app_lock_state = AppLockState::default();
 
     let builder = tauri::Builder::default();
@@ -71,6 +68,8 @@ pub fn run() {
         .manage(cloud_sync_manager.clone())
         .manage(agent_approval_manager.clone())
         .manage(transfer_duplicate_manager.clone())
+        .manage(event_bus)
+        .manage(core)
         .manage(app_lock_state)
         .setup(move |a| {
             app::setup(
