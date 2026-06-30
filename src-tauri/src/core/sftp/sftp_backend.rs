@@ -16,7 +16,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{Duration, Instant};
-use tauri::{Emitter, Manager};
+use tauri::Manager;
 use tokio::sync::{RwLock, Semaphore};
 
 const SFTP_MIN_REQUEST_KIB: usize = 64;
@@ -553,13 +553,13 @@ impl SftpBackend {
 
 fn sftp_attrs_is_dir(attrs: &FileAttributes) -> bool {
     attrs.permissions.map_or(false, |permissions| {
-        (permissions & SFTP_FILE_TYPE_MASK) == 0o040000
+        (permissions & SFTP_FILE_TYPE_MASK) == 0o040_000
     })
 }
 
 fn sftp_attrs_is_symlink(attrs: &FileAttributes) -> bool {
     attrs.permissions.map_or(false, |permissions| {
-        (permissions & SFTP_FILE_TYPE_MASK) == 0o120000
+        (permissions & SFTP_FILE_TYPE_MASK) == 0o120_000
     })
 }
 
@@ -745,12 +745,12 @@ async fn apply_remote_attrs(
         attrs.permissions = Some(type_bits | (mode & POSIX_MODE_MASK));
     }
     if uid.is_some() || gid.is_some() {
-        let effective_uid = uid.or(original_attrs.uid);
-        let effective_gid = gid.or(original_attrs.gid);
-        match (effective_uid, effective_gid) {
-            (Some(effective_uid), Some(effective_gid)) => {
-                attrs.uid = Some(effective_uid);
-                attrs.gid = Some(effective_gid);
+        let owner_uid = uid.or(original_attrs.uid);
+        let owner_gid = gid.or(original_attrs.gid);
+        match (owner_uid, owner_gid) {
+            (Some(owner_uid), Some(owner_gid)) => {
+                attrs.uid = Some(owner_uid);
+                attrs.gid = Some(owner_gid);
             }
             _ => {
                 return Err(AppError::Channel(
@@ -1629,7 +1629,7 @@ impl RemoteFs for SftpBackend {
         let size = attrs.size.unwrap_or(0);
         let mtime = u64::from(attrs.mtime.unwrap_or(0));
         let type_bits = attrs.permissions.unwrap_or(0) & SFTP_FILE_TYPE_MASK;
-        if type_bits == 0o040000 {
+        if type_bits == 0o040_000 {
             let _ = sftp.close().await;
             return Err(AppError::Config(
                 "Directories cannot be opened as text".to_string(),

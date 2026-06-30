@@ -764,7 +764,7 @@ mod tests {
 
     #[test]
     fn imports_xshell_quick_buttons_type_one_only() {
-        let raw = r#"[Info]
+        let raw = r"[Info]
 Version=8.2
 Count=3
 Expanded=1
@@ -778,7 +778,7 @@ Button_2_Type=2
 Button_0_Action=ls -la
 Button_1_Action=pwd
 Button_2_Action=whoami
-"#;
+";
         let import_config = parse_xshell_quick_buttons_content(raw);
         let mut config = empty_config();
 

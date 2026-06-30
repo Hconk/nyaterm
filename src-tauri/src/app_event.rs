@@ -49,6 +49,7 @@ impl AppEventBus {
     }
 
     /// Subscribe to future app events.
+    #[allow(dead_code)]
     pub fn subscribe(&self) -> broadcast::Receiver<AppEvent> {
         self.sender.subscribe()
     }

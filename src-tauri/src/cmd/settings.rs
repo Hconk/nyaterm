@@ -304,12 +304,12 @@ mod tests {
 
     #[test]
     fn import_keyword_highlight_rules_parses_array_format() {
-        let raw = r##"[
+        let raw = r#"[
             {
                 "name": "Warnings",
                 "patterns": ["warn"]
             }
-        ]"##;
+        ]"#;
 
         let rules = parse_keyword_highlight_import(raw).expect("parse array");
 
@@ -351,10 +351,10 @@ mod tests {
     fn import_keyword_highlight_rules_adds_generated_id_and_defaults() {
         let mut existing = Vec::new();
         let imported = parse_keyword_highlight_import(
-            r##"[{
+            r#"[{
                 "name": " Status ",
                 "patterns": [" success ", "", " done "]
-            }]"##,
+            }]"#,
         )
         .expect("parse");
 
@@ -376,12 +376,12 @@ mod tests {
     fn import_keyword_highlight_rules_rejects_empty_or_invalid_rules() {
         let mut existing = Vec::new();
         let imported = parse_keyword_highlight_import(
-            r##"{
+            r#"{
                 "keyword_highlights": [
                     { "name": "", "patterns": ["fatal"] },
                     { "name": "Empty Patterns", "patterns": ["", " "] }
                 ]
-            }"##,
+            }"#,
         )
         .expect("parse");
 
